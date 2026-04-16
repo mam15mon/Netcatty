@@ -652,8 +652,6 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
   workspacesRef.current = workspaces;
   const hostsRef = useRef(hosts);
   hostsRef.current = hosts;
-  const sessionHostsMapRef = useRef(sessionHostsMap);
-  sessionHostsMapRef.current = sessionHostsMap;
   const onSetWorkspaceFocusedSessionRef = useRef(onSetWorkspaceFocusedSession);
   onSetWorkspaceFocusedSessionRef.current = onSetWorkspaceFocusedSession;
 
@@ -877,6 +875,8 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     }
     return map;
   }, [sessions, hostMap, groupConfigs]);
+  const sessionHostsMapRef = useRef(sessionHostsMap);
+  sessionHostsMapRef.current = sessionHostsMap;
   const sessionChainHostsMap = useMemo(() => {
     const map = new Map<string, Host[]>();
     for (const session of sessions) {

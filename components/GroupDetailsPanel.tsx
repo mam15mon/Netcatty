@@ -323,12 +323,6 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
         ...(form.startupCommand !== undefined && { startupCommand: form.startupCommand }),
         ...(form.legacyAlgorithms !== undefined && { legacyAlgorithms: form.legacyAlgorithms }),
         ...(form.backspaceBehavior !== undefined && { backspaceBehavior: form.backspaceBehavior }),
-        ...(form.proxyConfig !== undefined && { proxyConfig: form.proxyConfig }),
-        ...(form.hostChain !== undefined && { hostChain: form.hostChain }),
-        ...(form.environmentVariables !== undefined && { environmentVariables: form.environmentVariables }),
-        ...(form.moshEnabled !== undefined && { moshEnabled: form.moshEnabled }),
-        ...(form.moshServerPath !== undefined && { moshServerPath: form.moshServerPath }),
-        ...(form.deviceType !== undefined && { deviceType: form.deviceType }),
       }),
       // Only include Telnet fields if Telnet section is enabled
       ...(telnetEnabled && {
@@ -339,6 +333,12 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
       }),
       // Shared fields (always saved)
       ...(form.charset !== undefined && { charset: form.charset }),
+      ...(form.proxyConfig !== undefined && { proxyConfig: form.proxyConfig }),
+      ...(form.hostChain !== undefined && { hostChain: form.hostChain }),
+      ...(form.environmentVariables !== undefined && { environmentVariables: form.environmentVariables }),
+      ...(form.moshEnabled !== undefined && { moshEnabled: form.moshEnabled }),
+      ...(form.moshServerPath !== undefined && { moshServerPath: form.moshServerPath }),
+      ...(form.deviceType !== undefined && { deviceType: form.deviceType }),
       ...((form.themeOverride !== false && form.theme !== undefined) && { theme: form.theme }),
       ...(form.themeOverride !== undefined && { themeOverride: form.themeOverride }),
       ...(form.fontFamily !== undefined && { fontFamily: form.fontFamily }),
