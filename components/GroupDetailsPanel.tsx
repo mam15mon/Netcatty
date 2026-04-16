@@ -1037,15 +1037,6 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
             />
           )}
 
-          <div className="pt-2 border-t border-border/40">
-            <p className="text-xs font-semibold mb-2">{t("vault.groups.details.charset")}</p>
-            <Input
-              placeholder="UTF-8"
-              value={form.charset || ""}
-              onChange={(e) => update("charset", e.target.value || undefined)}
-              className="h-10"
-            />
-          </div>
         </Card>
 
         {/* Appearance Section (Always Visible) */}
