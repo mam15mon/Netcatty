@@ -58,7 +58,7 @@ export function useUpdateCheck(options?: { autoUpdateEnabled?: boolean }): UseUp
   // reacts immediately in the same window. Falls back to reading localStorage
   // when no caller provides the value (e.g. in non-settings contexts).
   const autoUpdateEnabled = options?.autoUpdateEnabled ??
-    (localStorageAdapter.readString(STORAGE_KEY_AUTO_UPDATE_ENABLED) !== 'false');
+    (localStorageAdapter.readString(STORAGE_KEY_AUTO_UPDATE_ENABLED) === 'true');
 
   const [updateState, setUpdateState] = useState<UpdateState>({
     isChecking: false,

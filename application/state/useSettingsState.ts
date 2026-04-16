@@ -318,7 +318,7 @@ export const useSettingsState = () => {
   });
   const [autoUpdateEnabled, setAutoUpdateEnabled] = useState<boolean>(() => {
     const stored = readStoredString(STORAGE_KEY_AUTO_UPDATE_ENABLED);
-    if (stored === null) return true; // Default to enabled
+    if (stored === null) return false; // Default to disabled
     return stored === 'true';
   });
   const [hotkeyRegistrationError, setHotkeyRegistrationError] = useState<string | null>(null);

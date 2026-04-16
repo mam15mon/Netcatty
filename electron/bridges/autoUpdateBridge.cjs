@@ -14,19 +14,19 @@ let _deps = null;
 
 /**
  * Read the persisted auto-update preference from a JSON file in userData.
- * Returns true (default) if the file doesn't exist or is unreadable.
+ * Returns false (default) if the file doesn't exist or is unreadable.
  */
 function readAutoUpdatePreference() {
   try {
     const { app } = _deps?.electronModule || {};
-    if (!app) return true;
+    if (!app) return false;
     const path = require('path');
     const fs = require('fs');
     const prefPath = path.join(app.getPath('userData'), 'auto-update-pref.json');
     const data = JSON.parse(fs.readFileSync(prefPath, 'utf8'));
     return data.enabled !== false;
   } catch {
-    return true; // default to enabled
+    return false; // default to disabled
   }
 }
 
