@@ -12,6 +12,8 @@ export interface TerminalComposeBarProps {
     onSend: (text: string) => void;
     onClose: () => void;
     isBroadcastEnabled?: boolean;
+    showBroadcastToggle?: boolean;
+    onToggleBroadcast?: () => void;
     themeColors?: {
         background: string;
         foreground: string;
@@ -22,6 +24,8 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
     onSend,
     onClose,
     isBroadcastEnabled,
+    showBroadcastToggle,
+    onToggleBroadcast,
     themeColors,
 }) => {
     const { t } = useI18n();
@@ -80,15 +84,49 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
             }}
         >
             <div className="flex items-center gap-2">
-                {/* Broadcast indicator */}
-                {isBroadcastEnabled && (
+                {showBroadcastToggle ? (
+                    <button
+                        type="button"
+                        className="h-7 w-7 flex items-center justify-center rounded-md transition-colors duration-150"
+                        style={{
+                            color: isBroadcastEnabled
+                                ? '#fbbf24'
+                                : `color-mix(in srgb, ${resolvedFg} 60%, ${resolvedBg} 40%)`,
+                            background: `color-mix(in srgb, ${resolvedFg} 12%, ${resolvedBg} 88%)`,
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.background = `color-mix(in srgb, ${resolvedFg} 22%, ${resolvedBg} 78%)`;
+                            if (!isBroadcastEnabled) e.currentTarget.style.color = resolvedFg;
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.background = `color-mix(in srgb, ${resolvedFg} 12%, ${resolvedBg} 88%)`;
+                            e.currentTarget.style.color = isBroadcastEnabled
+                                ? '#fbbf24'
+                                : `color-mix(in srgb, ${resolvedFg} 60%, ${resolvedBg} 40%)`;
+                        }}
+                        onClick={onToggleBroadcast}
+                        title={
+                            isBroadcastEnabled
+                                ? t("terminal.toolbar.broadcastDisable")
+                                : t("terminal.toolbar.broadcastEnable")
+                        }
+                        aria-label={
+                            isBroadcastEnabled
+                                ? t("terminal.toolbar.broadcastDisable")
+                                : t("terminal.toolbar.broadcastEnable")
+                        }
+                        aria-pressed={isBroadcastEnabled}
+                    >
+                        <Radio size={13} className={cn(isBroadcastEnabled && "animate-pulse")} />
+                    </button>
+                ) : isBroadcastEnabled ? (
                     <div
                         className="flex items-center"
                         title={t("terminal.composeBar.broadcasting")}
                     >
                         <Radio size={14} className="text-amber-400 animate-pulse" />
                     </div>
-                )}
+                ) : null}
 
                 {/* Input field */}
                 <textarea

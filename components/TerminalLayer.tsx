@@ -629,6 +629,17 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     }
   }, [activeWorkspace, sessions, terminalBackend]);
 
+  // Compose bar global broadcast (solo session): send to all other connected sessions
+  const handleComposeBroadcastInput = useCallback((data: string, sourceSessionId: string) => {
+    const targetSessionIds = sessions
+      .filter(s => s.id !== sourceSessionId && s.status === 'connected')
+      .map(s => s.id);
+
+    for (const targetSessionId of targetSessionIds) {
+      terminalBackend.writeToSession(targetSessionId, data);
+    }
+  }, [sessions, terminalBackend]);
+
   // Workspace-level compose bar state
   const [isComposeBarOpen, setIsComposeBarOpen] = useState(false);
   const activeTabIdRef = useRef(activeTabId);
@@ -641,6 +652,8 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
   workspacesRef.current = workspaces;
   const hostsRef = useRef(hosts);
   hostsRef.current = hosts;
+  const sessionHostsMapRef = useRef(sessionHostsMap);
+  sessionHostsMapRef.current = sessionHostsMap;
   const onSetWorkspaceFocusedSessionRef = useRef(onSetWorkspaceFocusedSession);
   onSetWorkspaceFocusedSessionRef.current = onSetWorkspaceFocusedSession;
 
@@ -1749,7 +1762,10 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     return {
       sessions: sessionIds.map((sid) => {
         const session = latestSessions.find((s) => s.id === sid);
-        const host = session?.hostId ? latestHosts.find((h) => h.id === session.hostId) : undefined;
+        // Use the session-scoped effective host (group defaults already merged),
+        // so AI command execution sees inherited fields like deviceType.
+        const host = sessionHostsMapRef.current.get(sid)
+          ?? (session?.hostId ? latestHosts.find((h) => h.id === session.hostId) : undefined);
         return buildAITerminalSessionInfo(session, host, localOs);
       }),
       workspaceId: scope.type === 'workspace' ? scope.targetId : undefined,
@@ -2335,6 +2351,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                   onToggleComposeBar={inActiveWorkspace ? handleToggleWorkspaceComposeBar : undefined}
                   isWorkspaceComposeBarOpen={inActiveWorkspace ? isComposeBarOpen : undefined}
                   onBroadcastInput={inActiveWorkspace && activeWorkspace && isBroadcastEnabled?.(activeWorkspace.id) ? handleBroadcastInput : undefined}
+                  onComposeBroadcastInput={!inActiveWorkspace ? handleComposeBroadcastInput : undefined}
                   onSnippetExecutorChange={handleSnippetExecutorChange}
                   sessionLog={sessionLogConfig}
                 />

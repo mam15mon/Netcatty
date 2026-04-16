@@ -162,6 +162,7 @@ interface TerminalProps {
   onToggleComposeBar?: () => void;
   isWorkspaceComposeBarOpen?: boolean;
   onBroadcastInput?: (data: string, sourceSessionId: string) => void;
+  onComposeBroadcastInput?: (data: string, sourceSessionId: string) => void;
   onSnippetExecutorChange?: (
     sessionId: string,
     executor: ((command: string, noAutoRun?: boolean) => void) | null,
@@ -227,6 +228,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   onToggleComposeBar,
   isWorkspaceComposeBarOpen,
   onBroadcastInput,
+  onComposeBroadcastInput,
   onSnippetExecutorChange,
   sessionLog,
 }) => {
@@ -367,6 +369,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   const dragCounterRef = useRef(0);
   // pendingUploadEntries removed - drag-drop uploads now handled by SftpSidePanel
   const [isComposeBarOpen, setIsComposeBarOpen] = useState(false);
+  const [isComposeBroadcastEnabled, setIsComposeBroadcastEnabled] = useState(false);
   const [terminalEncoding, setTerminalEncoding] = useState<'utf-8' | 'gb18030'>(() => {
     if (host?.charset && /^gb/i.test(String(host.charset).trim())) return 'gb18030';
     return 'utf-8';
@@ -2230,14 +2233,20 @@ const TerminalComponent: React.FC<TerminalProps> = ({
                 const payload = text + '\r';
                 terminalBackend.writeToSession(sessionRef.current, payload);
                 scrollToBottomAfterProgrammaticInput(payload);
-                onBroadcastInput?.(payload, sessionRef.current);
+                if (isComposeBroadcastEnabled) {
+                  onComposeBroadcastInput?.(payload, sessionRef.current);
+                } else {
+                  onBroadcastInput?.(payload, sessionRef.current);
+                }
               }
             }}
             onClose={() => {
               setIsComposeBarOpen(false);
               termRef.current?.focus();
             }}
-            isBroadcastEnabled={isBroadcastEnabled}
+            isBroadcastEnabled={isComposeBroadcastEnabled}
+            showBroadcastToggle
+            onToggleBroadcast={() => setIsComposeBroadcastEnabled(prev => !prev)}
             themeColors={effectiveTheme.colors}
           />
         )}
