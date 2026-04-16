@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   Check,
   ChevronRight,
   Eye,
@@ -11,6 +12,7 @@ import {
   MoreHorizontal,
   Palette,
   Plus,
+  Router,
   Settings2,
   Shield,
   TerminalSquare,
@@ -162,6 +164,7 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
       delete next.protocol;
       delete next.moshEnabled;
       delete next.moshServerPath;
+      delete next.deviceType;
       return next;
     });
   };
@@ -325,6 +328,7 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
         ...(form.environmentVariables !== undefined && { environmentVariables: form.environmentVariables }),
         ...(form.moshEnabled !== undefined && { moshEnabled: form.moshEnabled }),
         ...(form.moshServerPath !== undefined && { moshServerPath: form.moshServerPath }),
+        ...(form.deviceType !== undefined && { deviceType: form.deviceType }),
       }),
       // Only include Telnet fields if Telnet section is enabled
       ...(telnetEnabled && {
@@ -839,80 +843,6 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
               </select>
             </div>
 
-            {/* Proxy */}
-            <button
-              type="button"
-              className="w-full flex items-center justify-between p-2 rounded-md bg-secondary/50 hover:bg-secondary transition-colors cursor-pointer"
-              onClick={() => setActiveSubPanel("proxy")}
-            >
-              <div className="flex items-center gap-2">
-                <Globe size={14} className="text-muted-foreground" />
-                <span className="text-sm">{t("hostDetails.proxy")}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                {form.proxyConfig?.host && (
-                  <Badge variant="secondary" className="text-xs">
-                    {form.proxyConfig.type?.toUpperCase()} {form.proxyConfig.host}:{form.proxyConfig.port}
-                  </Badge>
-                )}
-                <ChevronRight size={14} className="text-muted-foreground" />
-              </div>
-            </button>
-
-            {/* Host Chaining */}
-            <button
-              type="button"
-              className="w-full flex items-center justify-between p-2 rounded-md bg-secondary/50 hover:bg-secondary transition-colors cursor-pointer"
-              onClick={() => setActiveSubPanel("chain")}
-            >
-              <div className="flex items-center gap-2">
-                <Link2 size={14} className="text-muted-foreground" />
-                <span className="text-sm">{t("hostDetails.jumpHosts")}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                {chainedHosts.length > 0 && (
-                  <Badge variant="secondary" className="text-xs">
-                    {t("hostDetails.jumpHosts.hops", { count: chainedHosts.length })}
-                  </Badge>
-                )}
-                <ChevronRight size={14} className="text-muted-foreground" />
-              </div>
-            </button>
-
-            {/* Environment Variables */}
-            <button
-              type="button"
-              className="w-full flex items-center justify-between p-2 rounded-md bg-secondary/50 hover:bg-secondary transition-colors cursor-pointer"
-              onClick={() => setActiveSubPanel("env-vars")}
-            >
-              <div className="flex items-center gap-2">
-                <Variable size={14} className="text-muted-foreground" />
-                <span className="text-sm">{t("hostDetails.envVars")}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                {(form.environmentVariables?.length || 0) > 0 && (
-                  <Badge variant="secondary" className="text-xs">
-                    {form.environmentVariables!.length}
-                  </Badge>
-                )}
-                <ChevronRight size={14} className="text-muted-foreground" />
-              </div>
-            </button>
-
-            {/* Mosh */}
-            <ToggleRow
-              label="Mosh"
-              enabled={!!form.moshEnabled}
-              onToggle={() => update("moshEnabled", !form.moshEnabled)}
-            />
-            {form.moshEnabled && (
-              <Input
-                placeholder={t("hostDetails.moshServerPath") || "mosh-server path"}
-                value={form.moshServerPath || ""}
-                onChange={(e) => update("moshServerPath", e.target.value || undefined)}
-                className="h-10"
-              />
-            )}
           </Card>
         )}
 
@@ -987,8 +917,7 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
           </Card>
         )}
 
-        {/* Charset & Appearance — only when at least one protocol is added */}
-        {(sshEnabled || telnetEnabled) && (<>
+        {/* Connection & Device Defaults (Always Visible) */}
         <Card className="p-3 space-y-3 bg-card border-border/80">
           <div className="flex items-center gap-2">
             <Globe size={14} className="text-muted-foreground" />
@@ -996,15 +925,130 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
               {t("vault.groups.details.advanced")}
             </p>
           </div>
-          <Input
-            placeholder="UTF-8"
-            value={form.charset || ""}
-            onChange={(e) => update("charset", e.target.value || undefined)}
-            className="h-10"
+
+          {/* Proxy */}
+          <button
+            type="button"
+            className="w-full flex items-center justify-between p-2 rounded-md bg-secondary/50 hover:bg-secondary transition-colors cursor-pointer"
+            onClick={() => setActiveSubPanel("proxy")}
+          >
+            <div className="flex items-center gap-2">
+              <Globe size={14} className="text-muted-foreground" />
+              <span className="text-sm">{t("hostDetails.proxy")}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {form.proxyConfig?.host && (
+                <Badge variant="secondary" className="text-xs">
+                  {form.proxyConfig.type?.toUpperCase()} {form.proxyConfig.host}:{form.proxyConfig.port}
+                </Badge>
+              )}
+              <ChevronRight size={14} className="text-muted-foreground" />
+            </div>
+          </button>
+
+          {/* Device Type (Network Mode) */}
+          <div className="flex items-center gap-2 pt-1">
+            <Router size={14} className="text-muted-foreground" />
+            <p className="text-xs font-semibold">{t("hostDetails.section.deviceType")}</p>
+          </div>
+          <ToggleRow
+            label={t("hostDetails.deviceType")}
+            enabled={form.deviceType === 'network'}
+            onToggle={() => {
+              const enabling = form.deviceType !== 'network';
+              if (enabling) {
+                setForm(prev => ({ ...prev, deviceType: 'network', moshEnabled: false }));
+              } else {
+                update("deviceType", undefined);
+              }
+            }}
           />
+          <p className="text-xs text-muted-foreground break-words">
+            {t("hostDetails.deviceType.desc")}
+          </p>
+          {form.deviceType === 'network' && (
+            <div className="flex items-start gap-2 p-2 rounded-md bg-yellow-500/10 border border-yellow-500/20">
+              <AlertTriangle size={14} className="text-yellow-500 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-yellow-600 dark:text-yellow-400 break-words">
+                {t("hostDetails.deviceType.warning")}
+              </p>
+            </div>
+          )}
+
+          {/* Host Chaining */}
+          <button
+            type="button"
+            className="w-full flex items-center justify-between p-2 rounded-md bg-secondary/50 hover:bg-secondary transition-colors cursor-pointer"
+            onClick={() => setActiveSubPanel("chain")}
+          >
+            <div className="flex items-center gap-2">
+              <Link2 size={14} className="text-muted-foreground" />
+              <span className="text-sm">{t("hostDetails.jumpHosts")}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {chainedHosts.length > 0 && (
+                <Badge variant="secondary" className="text-xs">
+                  {t("hostDetails.jumpHosts.hops", { count: chainedHosts.length })}
+                </Badge>
+              )}
+              <ChevronRight size={14} className="text-muted-foreground" />
+            </div>
+          </button>
+
+          {/* Environment Variables */}
+          <button
+            type="button"
+            className="w-full flex items-center justify-between p-2 rounded-md bg-secondary/50 hover:bg-secondary transition-colors cursor-pointer"
+            onClick={() => setActiveSubPanel("env-vars")}
+          >
+            <div className="flex items-center gap-2">
+              <Variable size={14} className="text-muted-foreground" />
+              <span className="text-sm">{t("hostDetails.envVars")}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {(form.environmentVariables?.length || 0) > 0 && (
+                <Badge variant="secondary" className="text-xs">
+                  {form.environmentVariables!.length}
+                </Badge>
+              )}
+              <ChevronRight size={14} className="text-muted-foreground" />
+            </div>
+          </button>
+
+          {/* Mosh */}
+          <ToggleRow
+            label="Mosh"
+            enabled={!!form.moshEnabled}
+            onToggle={() => {
+              const enabling = !form.moshEnabled;
+              if (enabling && form.deviceType === 'network') {
+                setForm(prev => ({ ...prev, moshEnabled: true, deviceType: undefined }));
+              } else {
+                update("moshEnabled", enabling);
+              }
+            }}
+          />
+          {form.moshEnabled && (
+            <Input
+              placeholder={t("hostDetails.moshServerPath") || "mosh-server path"}
+              value={form.moshServerPath || ""}
+              onChange={(e) => update("moshServerPath", e.target.value || undefined)}
+              className="h-10"
+            />
+          )}
+
+          <div className="pt-2 border-t border-border/40">
+            <p className="text-xs font-semibold mb-2">{t("vault.groups.details.charset")}</p>
+            <Input
+              placeholder="UTF-8"
+              value={form.charset || ""}
+              onChange={(e) => update("charset", e.target.value || undefined)}
+              className="h-10"
+            />
+          </div>
         </Card>
 
-        {/* Appearance Section */}
+        {/* Appearance Section (Always Visible) */}
         <Card className="p-3 space-y-3 bg-card border-border/80">
           <div className="flex items-center gap-2">
             <Palette size={14} className="text-muted-foreground" />
@@ -1103,7 +1147,6 @@ const GroupDetailsPanel: React.FC<GroupDetailsPanelProps> = ({
             className="h-10"
           />
         </Card>
-        </>)}
 
         {/* Add Protocol Button — always at the bottom */}
         {addableProtocols.length > 0 && (

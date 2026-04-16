@@ -225,6 +225,7 @@ export interface GroupConfig {
   fontWeight?: number;
   fontWeightOverride?: boolean;
   backspaceBehavior?: 'ctrl-h';
+  deviceType?: 'general' | 'network';
 }
 
 export interface SyncConfig {
