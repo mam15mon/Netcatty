@@ -1,0 +1,16 @@
+diff --git a/node_modules/builder-util/out/util.js b/node_modules/builder-util/out/util.js
+index fe212d8..dc12cc4 100644
+--- a/node_modules/builder-util/out/util.js
++++ b/node_modules/builder-util/out/util.js
+@@ -105,7 +105,10 @@ function removePassword(input) {
+ }
+ function getProcessEnv(env) {
+     if (process.platform === "win32") {
+-        return env == null ? undefined : env;
++        // On Windows, keep the parent environment when extra env vars are provided.
++        // Replacing env entirely (e.g. { __COMPAT_LAYER: "RunAsInvoker" }) can
++        // cause child process spawn failures like "spawn UNKNOWN".
++        return env == null ? undefined : { ...process.env, ...env };
+     }
+     const finalEnv = {
+         ...(env || process.env),
