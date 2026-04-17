@@ -29,6 +29,7 @@ const THEME_COLORS = {
 // State
 let mainWindow = null;
 let settingsWindow = null;
+let composerWindow = null;
 let currentTheme = "light";
 let currentLanguage = "en";
 let handlersRegistered = false; // Prevent duplicate IPC handler registration
@@ -1319,6 +1320,116 @@ async function prewarmSettingsWindow(electronModule, options) {
 }
 
 /**
+ * Create or focus the composer window
+ */
+async function openComposerWindow(electronModule, options, { showOnLoad = true } = {}) {
+  const { BrowserWindow, screen } = electronModule;
+  const { preload, devServerUrl, isDev, appIcon, isMac, electronDir } = options;
+
+  if (composerWindow && !composerWindow.isDestroyed()) {
+    if (showOnLoad) {
+      composerWindow.show();
+      composerWindow.focus();
+    }
+    return composerWindow;
+  }
+
+  const osTheme = electronModule?.nativeTheme?.shouldUseDarkColors ? "dark" : "light";
+  const effectiveTheme = currentTheme === "dark" || currentTheme === "light" ? currentTheme : osTheme;
+  const frontendBackground = resolveFrontendBackgroundColor(electronDir || __dirname, effectiveTheme);
+  const backgroundColor = frontendBackground || "#1a1a1a";
+
+  const composerWidth = 720;
+  const composerHeight = 64; // Slim bar height
+  let composerX, composerY;
+
+  // Position it near the bottom of the last focused window or screen
+  const targetWin = (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) ? mainWindow : null;
+  const display = targetWin
+    ? screen.getDisplayMatching(targetWin.getBounds())
+    : screen.getPrimaryDisplay();
+
+  const { x: dx, y: dy, width: dw, height: dh } = display.workArea;
+  composerX = Math.round(dx + (dw - composerWidth) / 2);
+  composerY = Math.round(dy + dh - composerHeight - 80); // 80px from bottom
+
+  const win = new BrowserWindow({
+    title: "Composer",
+    width: composerWidth,
+    height: composerHeight,
+    x: composerX,
+    y: composerY,
+    frame: false,
+    resizable: false,
+    movable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    transparent: false,
+    backgroundColor,
+    icon: appIcon,
+    show: false,
+    webPreferences: {
+      preload,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      v8CacheOptions: V8_CACHE_OPTIONS,
+    },
+  });
+
+  composerWindow = win;
+
+  win.on('closed', () => {
+    composerWindow = null;
+  });
+
+  // Hide instead of close for reuse
+  win.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      win.hide();
+    }
+  });
+
+  // Blur hide (optional, but requested behavior is often "close on lost focus")
+  win.on('blur', () => {
+    // We might want to keep it open, but for a global bar, hiding on blur is clean
+    // For now, let's keep it open until explicit close/ESC
+  });
+
+  const composerPath = '/#/composer';
+  if (isDev) {
+    try {
+      const baseUrl = getDevRendererBaseUrl(devServerUrl);
+      await win.loadURL(`${baseUrl}${composerPath}`);
+      if (showOnLoad) { win.show(); win.focus(); }
+      return win;
+    } catch (e) {
+      console.warn("Dev server not reachable for composer window", e);
+    }
+  }
+
+  await win.loadURL("app://netcatty/index.html#/composer");
+  if (showOnLoad) { win.show(); win.focus(); }
+  return win;
+}
+
+/**
+ * Toggle the composer window
+ */
+async function toggleComposerWindow(electronModule, options) {
+  if (composerWindow && !composerWindow.isDestroyed() && composerWindow.isVisible()) {
+    composerWindow.hide();
+    // Return focus to main window when closing
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isMinimized()) {
+       mainWindow.focus();
+    }
+    return;
+  }
+  await openComposerWindow(electronModule, options);
+}
+
+/**
  * Register window control IPC handlers (only once)
  */
 function registerWindowHandlers(ipcMain, nativeTheme) {
@@ -1558,6 +1669,9 @@ module.exports = {
   buildAppMenu,
   getMainWindow,
   getSettingsWindow,
+  getComposerWindow: () => composerWindow,
+  toggleComposerWindow,
+  openComposerWindow,
   setIsQuitting,
   openFallbackBrowser,
   tryOpenExternalWithFallback,

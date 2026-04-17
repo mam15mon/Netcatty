@@ -4,9 +4,11 @@
  * Supports pre-reviewing passwords/commands and broadcasting to multiple sessions.
  */
 import { Radio, Send, X } from 'lucide-react';
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { cn } from '../../lib/utils';
+
+type ComposeSendTarget = 'current-tab' | 'current-split' | 'all-sessions';
 
 export interface TerminalComposeBarProps {
     onSend: (text: string) => void;
@@ -18,6 +20,10 @@ export interface TerminalComposeBarProps {
         background: string;
         foreground: string;
     };
+    value?: string;
+    onValueChange?: (value: string) => void;
+    sendTarget?: ComposeSendTarget;
+    onSendTargetChange?: (target: ComposeSendTarget) => void;
 }
 
 export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
@@ -27,10 +33,16 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
     showBroadcastToggle,
     onToggleBroadcast,
     themeColors,
+    value,
+    onValueChange,
+    sendTarget = 'current-split',
+    onSendTargetChange,
 }) => {
     const { t } = useI18n();
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const isComposingRef = useRef(false);
+    const [internalValue, setInternalValue] = useState('');
+    const inputValue = value ?? internalValue;
 
     // Auto-focus on mount
     useEffect(() => {
@@ -39,24 +51,41 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
         return () => clearTimeout(timer);
     }, []);
 
+    const setComposeText = useCallback((next: string) => {
+        if (onValueChange) {
+            onValueChange(next);
+            return;
+        }
+        setInternalValue(next);
+    }, [onValueChange]);
+
     // Auto-resize textarea
-    const handleInput = useCallback(() => {
+    const resizeTextarea = useCallback(() => {
         const el = textareaRef.current;
         if (!el) return;
         el.style.height = 'auto';
         el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
     }, []);
 
+    useEffect(() => {
+        resizeTextarea();
+    }, [inputValue, resizeTextarea]);
+
+    const handleInput = useCallback((e: React.FormEvent<HTMLTextAreaElement>) => {
+        setComposeText(e.currentTarget.value);
+    }, [setComposeText]);
+
     const handleSend = useCallback(() => {
-        const el = textareaRef.current;
-        if (!el) return;
-        const text = el.value;
+        const text = inputValue;
         if (!text) return;
         onSend(text);
-        el.value = '';
-        el.style.height = 'auto';
-        el.focus();
-    }, [onSend]);
+        setComposeText('');
+        const el = textareaRef.current;
+        if (el) {
+            el.style.height = 'auto';
+            el.focus();
+        }
+    }, [inputValue, onSend, setComposeText]);
 
     const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === 'Enter' && !e.shiftKey && !isComposingRef.current) {
@@ -145,6 +174,7 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                         boxShadow: `inset 0 1px 3px color-mix(in srgb, ${resolvedBg} 80%, transparent)`,
                     }}
                     rows={1}
+                    value={inputValue}
                     placeholder={t("terminal.composeBar.placeholder")}
                     onInput={handleInput}
                     onKeyDown={handleKeyDown}
@@ -159,6 +189,24 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                     onCompositionStart={() => { isComposingRef.current = true; }}
                     onCompositionEnd={() => { isComposingRef.current = false; }}
                 />
+                {onSendTargetChange && (
+                    <select
+                        className="h-7 rounded-md px-2 text-[11px] font-medium outline-none"
+                        style={{
+                            backgroundColor: `color-mix(in srgb, ${resolvedFg} 10%, ${resolvedBg} 90%)`,
+                            color: resolvedFg,
+                            border: `1px solid color-mix(in srgb, ${resolvedFg} 25%, ${resolvedBg} 75%)`,
+                        }}
+                        value={sendTarget}
+                        onChange={(e) => onSendTargetChange(e.target.value as ComposeSendTarget)}
+                        title={t("terminal.composeBar.sendTarget")}
+                        aria-label={t("terminal.composeBar.sendTarget")}
+                    >
+                        <option value="current-tab">{t("terminal.composeBar.sendTarget.currentTab")}</option>
+                        <option value="current-split">{t("terminal.composeBar.sendTarget.currentSplit")}</option>
+                        <option value="all-sessions">{t("terminal.composeBar.sendTarget.allSessions")}</option>
+                    </select>
+                )}
 
                 {/* Action buttons */}
                 <div className="flex items-center gap-0.5">

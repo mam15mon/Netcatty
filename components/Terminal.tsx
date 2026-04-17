@@ -42,7 +42,6 @@ import { useCustomThemes } from "../application/state/customThemeStore";
 
 import { TerminalConnectionDialog } from "./terminal/TerminalConnectionDialog";
 import { TerminalToolbar } from "./terminal/TerminalToolbar";
-import { TerminalComposeBar } from "./terminal/TerminalComposeBar";
 import { TerminalContextMenu } from "./terminal/TerminalContextMenu";
 import { TerminalSearchBar } from "./terminal/TerminalSearchBar";
 import { ZmodemProgressIndicator } from "./terminal/ZmodemProgressIndicator";
@@ -160,9 +159,7 @@ interface TerminalProps {
   isBroadcastEnabled?: boolean;
   onToggleBroadcast?: () => void;
   onToggleComposeBar?: () => void;
-  isWorkspaceComposeBarOpen?: boolean;
   onBroadcastInput?: (data: string, sourceSessionId: string) => void;
-  onComposeBroadcastInput?: (data: string, sourceSessionId: string) => void;
   onSnippetExecutorChange?: (
     sessionId: string,
     executor: ((command: string, noAutoRun?: boolean) => void) | null,
@@ -226,9 +223,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   isBroadcastEnabled,
   onToggleBroadcast,
   onToggleComposeBar,
-  isWorkspaceComposeBarOpen,
   onBroadcastInput,
-  onComposeBroadcastInput,
   onSnippetExecutorChange,
   sessionLog,
 }) => {
@@ -368,8 +363,6 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const dragCounterRef = useRef(0);
   // pendingUploadEntries removed - drag-drop uploads now handled by SftpSidePanel
-  const [isComposeBarOpen, setIsComposeBarOpen] = useState(false);
-  const [isComposeBroadcastEnabled, setIsComposeBroadcastEnabled] = useState(false);
   const [terminalEncoding, setTerminalEncoding] = useState<'utf-8' | 'gb18030'>(() => {
     if (host?.charset && /^gb/i.test(String(host.charset).trim())) return 'gb18030';
     return 'utf-8';
@@ -1635,8 +1628,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       onClose={() => onCloseSession?.(sessionId)}
       isSearchOpen={isSearchOpen}
       onToggleSearch={handleToggleSearch}
-      isComposeBarOpen={inWorkspace ? isWorkspaceComposeBarOpen : isComposeBarOpen}
-      onToggleComposeBar={inWorkspace ? onToggleComposeBar : () => setIsComposeBarOpen(prev => !prev)}
+      onToggleComposeBar={onToggleComposeBar}
       terminalEncoding={terminalEncoding}
       onSetTerminalEncoding={handleSetTerminalEncoding}
     />
@@ -1675,10 +1667,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       onClose={inWorkspace ? () => onCloseSession?.(sessionId) : undefined}
     >
       <div
-        className={cn(
-          "relative h-full w-full flex overflow-hidden bg-gradient-to-br from-[#050910] via-[#06101a] to-[#0b1220]",
-          isComposeBarOpen && !inWorkspace && "flex-col"
-        )}
+        className="relative h-full w-full flex overflow-hidden bg-gradient-to-br from-[#050910] via-[#06101a] to-[#0b1220]"
         style={terminalPreviewVars}
         onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
@@ -2224,32 +2213,6 @@ const TerminalComponent: React.FC<TerminalProps> = ({
             </div>
           )}
         </div>
-
-        {/* Compose Bar (solo sessions only; workspace uses TerminalLayer's global bar) */}
-        {isComposeBarOpen && !inWorkspace && (
-          <TerminalComposeBar
-            onSend={(text) => {
-              if (sessionRef.current) {
-                const payload = text + '\r';
-                terminalBackend.writeToSession(sessionRef.current, payload);
-                scrollToBottomAfterProgrammaticInput(payload);
-                if (isComposeBroadcastEnabled) {
-                  onComposeBroadcastInput?.(payload, sessionRef.current);
-                } else {
-                  onBroadcastInput?.(payload, sessionRef.current);
-                }
-              }
-            }}
-            onClose={() => {
-              setIsComposeBarOpen(false);
-              termRef.current?.focus();
-            }}
-            isBroadcastEnabled={isComposeBroadcastEnabled}
-            showBroadcastToggle
-            onToggleBroadcast={() => setIsComposeBroadcastEnabled(prev => !prev)}
-            themeColors={effectiveTheme.colors}
-          />
-        )}
       </div>
     </TerminalContextMenu>
   );

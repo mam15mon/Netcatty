@@ -580,6 +580,29 @@ declare global {
     rendererReady?(): void;
 
     onLanguageChanged?(cb: (language: string) => void): () => void;
+    // Singleton Composer
+    openComposer?(): Promise<boolean>;
+    toggleComposer?(): Promise<boolean>;
+    saveActiveSessionContext?(context: {
+      sessionId?: string;
+      workspaceId?: string;
+      focusedSessionId?: string;
+      sessionIds: string[];
+      targetNames: string[];
+      isBroadcast?: boolean;
+    } | null): void;
+    queryActiveSessionContext?(): Promise<{
+      sessionId?: string;
+      workspaceId?: string;
+      focusedSessionId?: string;
+      sessionIds: string[];
+      targetNames: string[];
+      isBroadcast?: boolean;
+    } | null>;
+    sendComposerData?(data: {
+      text: string;
+      sendTarget: 'current-tab' | 'current-split' | 'all-sessions';
+    }): void;
 
     // Chain progress listener for jump host connections
     // Callback receives: (sessionId: string, currentHop: number, totalHops: number, hostLabel: string, status: string, error?: string)

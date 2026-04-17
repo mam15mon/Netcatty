@@ -30,6 +30,7 @@ import { detectLocalOs } from '../lib/localShell';
 import { useStoredString } from '../application/state/useStoredString';
 import { useStoredNumber } from '../application/state/useStoredNumber';
 import { STORAGE_KEY_SIDE_PANEL_WIDTH } from '../infrastructure/config/storageKeys';
+import { netcattyBridge } from '../infrastructure/services/netcattyBridge';
 import { buildCacheKey } from '../application/state/sftp/sharedRemoteHostCache';
 import type { DropEntry } from '../lib/sftpFileUtils';
 import { GroupConfig, Host, Identity, KnownHost, SSHKey, Snippet, TerminalSession, TerminalTheme, Workspace, WorkspaceNode } from '../types';
@@ -42,7 +43,6 @@ import { ScriptsSidePanel } from './ScriptsSidePanel';
 import { ThemeSidePanel } from './terminal/ThemeSidePanel';
 import { AIChatSidePanel } from './AIChatSidePanel';
 import { useAIState } from '../application/state/useAIState';
-import { TerminalComposeBar } from './terminal/TerminalComposeBar';
 import { TERMINAL_THEMES } from '../infrastructure/config/terminalThemes';
 import { useCustomThemes } from '../application/state/customThemeStore';
 import { Button } from './ui/button';
@@ -50,6 +50,15 @@ import { ScrollArea } from './ui/scroll-area';
 import { setupMcpApprovalBridge } from '../infrastructure/ai/shared/approvalGate';
 
 type SidePanelTab = 'sftp' | 'scripts' | 'theme' | 'ai';
+
+type ComposerActiveContext = {
+  sessionId?: string;
+  workspaceId?: string;
+  focusedSessionId?: string;
+  sessionIds: string[];
+  targetNames: string[];
+  isBroadcast?: boolean;
+};
 
 type WorkspaceRect = { x: number; y: number; w: number; h: number };
 
@@ -629,19 +638,45 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     }
   }, [activeWorkspace, sessions, terminalBackend]);
 
-  // Compose bar global broadcast (solo session): send to all other connected sessions
-  const handleComposeBroadcastInput = useCallback((data: string, sourceSessionId: string) => {
-    const targetSessionIds = sessions
-      .filter(s => s.id !== sourceSessionId && s.status === 'connected')
-      .map(s => s.id);
+  // Workspace-level compose bar state (handled by main process singleton)
+  const handleToggleComposer = useCallback(() => {
+    netcattyBridge.get()?.toggleComposer();
+  }, []);
 
-    for (const targetSessionId of targetSessionIds) {
-      terminalBackend.writeToSession(targetSessionId, data);
+  // Update active session context to main process for global composer
+  useEffect(() => {
+    let context: ComposerActiveContext | null = null;
+
+    if (activeWorkspace) {
+      const workspaceSessions = sessions.filter((session) => session.workspaceId === activeWorkspace.id);
+      const sessionIds = workspaceSessions.map((session) => session.id);
+      const focusedSessionId = activeWorkspace.focusedSessionId && sessionIds.includes(activeWorkspace.focusedSessionId)
+        ? activeWorkspace.focusedSessionId
+        : sessionIds[0];
+      const targetNames = workspaceSessions.map((session) => {
+        const host = hosts.find((item) => item.id === session.hostId);
+        return host?.label || session.hostLabel || session.hostname || session.id;
+      });
+      context = {
+        workspaceId: activeWorkspace.id,
+        isBroadcast: isBroadcastEnabled?.(activeWorkspace.id) || false,
+        focusedSessionId,
+        sessionIds,
+        targetNames,
+      };
+    } else if (activeSession) {
+      const host = hosts.find((item) => item.id === activeSession.hostId);
+      context = {
+        sessionId: activeSession.id,
+        focusedSessionId: activeSession.id,
+        sessionIds: [activeSession.id],
+        targetNames: [host?.label || activeSession.hostLabel || activeSession.hostname || activeSession.id],
+      };
     }
-  }, [sessions, terminalBackend]);
 
-  // Workspace-level compose bar state
-  const [isComposeBarOpen, setIsComposeBarOpen] = useState(false);
+    netcattyBridge.get()?.saveActiveSessionContext?.(context);
+  }, [activeSession, activeWorkspace, hosts, isBroadcastEnabled, sessions]);
+
   const activeTabIdRef = useRef(activeTabId);
   activeTabIdRef.current = activeTabId;
   const activeWorkspaceRef = useRef(activeWorkspace);
@@ -688,9 +723,6 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
   const sftpHostForTabRef = useRef(sftpHostForTab);
   sftpHostForTabRef.current = sftpHostForTab;
 
-  const handleToggleWorkspaceComposeBar = useCallback(() => {
-    setIsComposeBarOpen(prev => !prev);
-  }, []);
 
   const handleOpenSftp = useCallback((host: Host, initialPath?: string, pendingUploadEntries?: DropEntry[], sourceSessionId?: string) => {
     const tabId = activeTabIdRef.current;
@@ -1787,38 +1819,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     [sessionLogsDir, sessionLogsEnabled, sessionLogsFormat],
   );
 
-  // Resolve the effective theme for the compose bar in workspace mode
-  const composeBarThemeColors = useMemo(() => {
-    if (!activeWorkspace || !focusedSessionId) return terminalTheme.colors;
-    return resolvedPreviewTheme.colors;
-  }, [activeWorkspace, focusedSessionId, resolvedPreviewTheme, terminalTheme.colors]);
 
-  // Handle compose bar send for workspace mode
-  const handleComposeSend = useCallback((text: string) => {
-    if (!activeWorkspace) return;
-    const payload = text + '\r';
-    const broadcastEnabled = isBroadcastEnabled?.(activeWorkspace.id);
-
-    if (broadcastEnabled) {
-      // Send to all sessions in the workspace
-      const allSessionIds = sessions
-        .filter(s => s.workspaceId === activeWorkspace.id)
-        .map(s => s.id);
-      for (const sid of allSessionIds) {
-        terminalBackend.writeToSession(sid, payload);
-      }
-    } else {
-      // Validate focusedSessionId is a live session, then fallback to first available
-      const workspaceSessions = sessions.filter(s => s.workspaceId === activeWorkspace.id);
-      const validFocusedId = focusedSessionId && workspaceSessions.some(s => s.id === focusedSessionId)
-        ? focusedSessionId
-        : undefined;
-      const targetId = validFocusedId ?? workspaceSessions[0]?.id;
-      if (targetId) {
-        terminalBackend.writeToSession(targetId, payload);
-      }
-    }
-  }, [activeWorkspace, focusedSessionId, sessions, terminalBackend, isBroadcastEnabled]);
 
   useEffect(() => {
     if (isFocusMode && dropHint) {
@@ -2348,10 +2349,8 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                   onSplitVertical={onSplitSession ? splitVerticalHandler : undefined}
                   isBroadcastEnabled={inActiveWorkspace && activeWorkspace ? isBroadcastEnabled?.(activeWorkspace.id) : false}
                   onToggleBroadcast={inActiveWorkspace ? workspaceBroadcastHandler : undefined}
-                  onToggleComposeBar={inActiveWorkspace ? handleToggleWorkspaceComposeBar : undefined}
-                  isWorkspaceComposeBarOpen={inActiveWorkspace ? isComposeBarOpen : undefined}
+                  onToggleComposeBar={handleToggleComposer}
                   onBroadcastInput={inActiveWorkspace && activeWorkspace && isBroadcastEnabled?.(activeWorkspace.id) ? handleBroadcastInput : undefined}
-                  onComposeBroadcastInput={!inActiveWorkspace ? handleComposeBroadcastInput : undefined}
                   onSnippetExecutorChange={handleSnippetExecutorChange}
                   sessionLog={sessionLogConfig}
                 />
@@ -2411,27 +2410,6 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
             );
           })}
         </div>
-      </div>
-
-      {/* Global compose bar for workspace mode */}
-        {activeWorkspace && isComposeBarOpen && (
-          <TerminalComposeBar
-            onSend={handleComposeSend}
-            onClose={() => {
-              setIsComposeBarOpen(false);
-              // Refocus the terminal pane (matching solo-session behavior)
-              if (focusedSessionId) {
-                requestAnimationFrame(() => {
-                  const pane = document.querySelector(`[data-session-id="${focusedSessionId}"]`);
-                  const textarea = pane?.querySelector('textarea.xterm-helper-textarea') as HTMLTextAreaElement | null;
-                  textarea?.focus();
-                });
-              }
-            }}
-            isBroadcastEnabled={isBroadcastEnabled?.(activeWorkspace.id)}
-            themeColors={composeBarThemeColors}
-          />
-        )}
       </div>
     </AIStateProvider>
   );

@@ -25,7 +25,6 @@ export interface TerminalToolbarProps {
     isSearchOpen?: boolean;
     onToggleSearch?: () => void;
     // Compose bar
-    isComposeBarOpen?: boolean;
     onToggleComposeBar?: () => void;
     // Terminal encoding
     terminalEncoding?: 'utf-8' | 'gb18030';
@@ -43,7 +42,6 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
     onClose,
     isSearchOpen,
     onToggleSearch,
-    isComposeBarOpen,
     onToggleComposeBar,
     terminalEncoding,
     onSetTerminalEncoding,
@@ -166,7 +164,6 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
                         size="icon"
                         className={buttonBase}
                         aria-label={t("terminal.toolbar.composeBar")}
-                        aria-pressed={isComposeBarOpen}
                         onClick={onToggleComposeBar}
                     >
                         <TextCursorInput size={12} />

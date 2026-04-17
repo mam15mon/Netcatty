@@ -766,6 +766,12 @@ const api = {
     languageChangeListeners.add(cb);
     return () => languageChangeListeners.delete(cb);
   },
+  // Singleton Composer
+  openComposer: () => ipcRenderer.invoke("netcatty:composer:open"),
+  toggleComposer: () => ipcRenderer.invoke("netcatty:composer:toggle"),
+  saveActiveSessionContext: (context) => ipcRenderer.send("netcatty:session:active-context-changed", context),
+  queryActiveSessionContext: () => ipcRenderer.invoke("netcatty:composer:query-active-context"),
+  sendComposerData: (data) => ipcRenderer.send("netcatty:composer:send", data),
   // Streaming transfer with real progress
   startStreamTransfer: async (options, onProgress, onComplete, onError) => {
     const { transferId } = options;

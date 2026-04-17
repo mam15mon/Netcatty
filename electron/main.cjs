@@ -365,6 +365,10 @@ const keyRoot = path.join(os.homedir(), ".netcatty", "keys");
 let cloudSyncSessionPassword = null;
 const CLOUD_SYNC_PASSWORD_FILE = "netcatty_cloud_sync_master_password_v1";
 
+// Singleton Composer State
+let lastFocusedWebContentsId = null;
+let lastFocusedSessionContext = null;
+
 // Key management helpers
 const ensureKeyDir = async () => {
   try {
@@ -465,6 +469,19 @@ const registerBridges = (win) => {
       console.warn("[CloudSync] Failed to clear persisted password:", err?.message || err);
     }
   };
+
+  // Track focused window and active session for the singleton composer
+  app.on("browser-window-focus", (event, window) => {
+    if (window === getWindowManager().getComposerWindow()) return;
+    lastFocusedWebContentsId = window.webContents.id;
+  });
+
+  ipcMain.on("netcatty:session:active-context-changed", (event, context) => {
+    // Only trust context updates from the main windows (not the composer itself)
+    if (event.sender === getWindowManager().getComposerWindow()?.webContents) return;
+    lastFocusedWebContentsId = event.sender.id;
+    lastFocusedSessionContext = context;
+  });
 
   // Initialize bridges with shared dependencies
   const cliDiscoveryFilePath = getCliDiscoveryFilePath({ userDataDir: app.getPath("userData") });
@@ -637,6 +654,78 @@ const registerBridges = (win) => {
     } catch (err) {
       console.error("[Main] Failed to open settings window:", err);
       return false;
+    }
+  });
+
+  // Composer window handlers
+  ipcMain.handle("netcatty:composer:open", async () => {
+    try {
+      await getWindowManager().openComposerWindow(electronModule, {
+        preload,
+        devServerUrl: effectiveDevServerUrl,
+        isDev,
+        appIcon,
+        isMac,
+        electronDir,
+      });
+      return true;
+    } catch (err) {
+      console.error("[Main] Failed to open composer window:", err);
+      return false;
+    }
+  });
+
+  ipcMain.handle("netcatty:composer:toggle", async () => {
+    try {
+      await getWindowManager().toggleComposerWindow(electronModule, {
+        preload,
+        devServerUrl: effectiveDevServerUrl,
+        isDev,
+        appIcon,
+        isMac,
+        electronDir,
+      });
+      return true;
+    } catch (err) {
+      console.error("[Main] Failed to toggle composer window:", err);
+      return false;
+    }
+  });
+
+  ipcMain.handle("netcatty:composer:query-active-context", () => {
+    return lastFocusedSessionContext || null;
+  });
+
+  ipcMain.on("netcatty:composer:send", (_event, payload) => {
+    const text = typeof payload?.text === "string" ? payload.text : "";
+    const sendTarget = payload?.sendTarget;
+    if (!text.trim()) return;
+
+    const data = text.endsWith("\r") ? text : `${text}\r`;
+    const context = lastFocusedSessionContext;
+    let targetSessionIds = [];
+
+    if (sendTarget === "all-sessions") {
+      targetSessionIds = Array.from(sessions.keys());
+    } else if (sendTarget === "current-tab") {
+      if (Array.isArray(context?.sessionIds) && context.sessionIds.length > 0) {
+        targetSessionIds = context.sessionIds;
+      } else if (context?.sessionId) {
+        targetSessionIds = [context.sessionId];
+      }
+    } else {
+      const focusedSessionId =
+        context?.focusedSessionId
+        || context?.sessionId
+        || (Array.isArray(context?.sessionIds) ? context.sessionIds[0] : undefined);
+      if (focusedSessionId) {
+        targetSessionIds = [focusedSessionId];
+      }
+    }
+
+    const dedupedSessionIds = Array.from(new Set(targetSessionIds)).filter((sessionId) => sessions.has(sessionId));
+    for (const sessionId of dedupedSessionIds) {
+      terminalBridge.writeToSession(null, { sessionId, data });
     }
   });
 

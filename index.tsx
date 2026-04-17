@@ -12,6 +12,7 @@ import { ToastProvider } from './components/ui/toast';
 
 const LazySettingsPage = lazy(() => import('./components/SettingsPage'));
 const LazyTrayPanel = lazy(() => import('./components/TrayPanel'));
+const LazyComposerWindow = lazy(() => import('./components/ComposerWindow'));
 
 function SettingsWindowFallback() {
   return (
@@ -93,6 +94,9 @@ const getRoute = () => {
   if (hash === '#/tray' || hash.startsWith('#/tray')) {
     return 'tray';
   }
+  if (hash === '#/composer' || hash.startsWith('#/composer')) {
+    return 'composer';
+  }
   return 'main';
 };
 
@@ -113,6 +117,14 @@ const renderApp = () => {
       <ToastProvider>
         <Suspense fallback={<div style={{ padding: 12, color: '#fff' }}>Loading tray panel…</div>}>
           <LazyTrayPanel />
+        </Suspense>
+      </ToastProvider>
+    );
+  } else if (route === 'composer') {
+    root.render(
+      <ToastProvider>
+        <Suspense fallback={null}>
+          <LazyComposerWindow />
         </Suspense>
       </ToastProvider>
     );
