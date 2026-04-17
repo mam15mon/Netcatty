@@ -6,7 +6,7 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { dialog } = require("electron");
+const { BrowserWindow, dialog } = require("electron");
 
 /**
  * Get current Date to a local ISO-like string (YYYY-MM-DDTHH-MM-SS)
@@ -31,22 +31,6 @@ function sanitizeFileName(name) {
     .replace(/\s+/g, " ")
     .replace(/[. ]+$/g, "");
   return cleaned || "session";
-}
-
-async function makeUniqueFilePath(directory, fileName) {
-  const parsed = path.parse(fileName);
-  let candidate = path.join(directory, fileName);
-  let index = 1;
-
-  while (true) {
-    try {
-      await fs.promises.access(candidate);
-      candidate = path.join(directory, `${parsed.name}_${index}${parsed.ext}`);
-      index += 1;
-    } catch {
-      return candidate;
-    }
-  }
 }
 
 /**
@@ -318,36 +302,97 @@ async function openSessionLogsDir(event, payload) {
 }
 
 /**
- * Create a .log file in configured session log directory (or user home) and open the directory
+ * Start manual session log stream via Save As dialog (CRT-like)
  */
-async function createAndOpenSessionLog(event, payload = {}) {
-  const { shell } = require("electron");
-  const { directory, sessionName, terminalData } = payload;
-  const targetDirectory = typeof directory === "string" && directory.trim()
-    ? directory.trim()
+async function startManualSessionLog(event, payload = {}) {
+  const sessionLogStreamManager = require("./sessionLogStreamManager.cjs");
+  const { sessionId, sessionName, preferredDirectory } = payload;
+  if (!sessionId) {
+    return { success: false, started: false, error: "Missing sessionId" };
+  }
+
+  if (sessionLogStreamManager.hasStream(sessionId)) {
+    return { success: false, started: false, error: "Session log is already active" };
+  }
+
+  const targetDirectory = typeof preferredDirectory === "string" && preferredDirectory.trim()
+    ? preferredDirectory.trim()
     : os.homedir();
 
   try {
     await fs.promises.mkdir(targetDirectory, { recursive: true });
-
     const safeSessionName = sanitizeFileName(sessionName);
-    const fileName = `${safeSessionName}_${toLocalISOString(new Date())}.log`;
-    const filePath = await makeUniqueFilePath(targetDirectory, fileName);
-    await fs.promises.writeFile(
-      filePath,
-      typeof terminalData === "string" ? terminalData : "",
-      "utf8",
+    const defaultPath = path.join(
+      targetDirectory,
+      `${safeSessionName}_${toLocalISOString(new Date())}.log`,
     );
 
-    const openError = await shell.openPath(targetDirectory);
-    if (openError) {
-      return { success: false, error: openError, filePath, directory: targetDirectory };
+    const parentWindow = BrowserWindow.fromWebContents(event.sender);
+    const result = await dialog.showSaveDialog(parentWindow ?? undefined, {
+      defaultPath,
+      title: "Save Session Log",
+      filters: [
+        { name: "Log Files", extensions: ["log"] },
+        { name: "All Files", extensions: ["*"] },
+      ],
+    });
+
+    if (result.canceled || !result.filePath) {
+      return { success: true, started: false, canceled: true };
     }
 
-    return { success: true, filePath, directory: targetDirectory };
+    const filePath = path.extname(result.filePath)
+      ? result.filePath
+      : `${result.filePath}.log`;
+
+    const startResult = sessionLogStreamManager.startStreamToFile(sessionId, {
+      filePath,
+      format: "raw",
+      hostLabel: safeSessionName,
+      startTime: Date.now(),
+    });
+
+    if (!startResult.ok) {
+      return { success: false, started: false, error: startResult.error || "Failed to start stream" };
+    }
+
+    return { success: true, started: true, filePath };
   } catch (err) {
-    return { success: false, error: err?.message || String(err), directory: targetDirectory };
+    return { success: false, started: false, error: err?.message || String(err) };
   }
+}
+
+/**
+ * Stop manual session log stream
+ */
+async function stopManualSessionLog(event, payload = {}) {
+  const sessionLogStreamManager = require("./sessionLogStreamManager.cjs");
+  const { sessionId } = payload;
+  if (!sessionId) {
+    return { success: false, stopped: false, error: "Missing sessionId" };
+  }
+
+  try {
+    const filePath = await sessionLogStreamManager.stopStream(sessionId);
+    if (!filePath) {
+      return { success: true, stopped: false };
+    }
+    return { success: true, stopped: true, filePath };
+  } catch (err) {
+    return { success: false, stopped: false, error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Query whether manual log stream is active for session
+ */
+async function getManualSessionLogStatus(event, payload = {}) {
+  const sessionLogStreamManager = require("./sessionLogStreamManager.cjs");
+  const { sessionId } = payload;
+  if (!sessionId) {
+    return { success: false, isLogging: false, error: "Missing sessionId" };
+  }
+  return { success: true, isLogging: sessionLogStreamManager.hasStream(sessionId) };
 }
 
 /**
@@ -358,7 +403,9 @@ function registerHandlers(ipcMain) {
   ipcMain.handle("netcatty:sessionLogs:selectDir", selectSessionLogsDir);
   ipcMain.handle("netcatty:sessionLogs:autoSave", autoSaveSessionLog);
   ipcMain.handle("netcatty:sessionLogs:openDir", openSessionLogsDir);
-  ipcMain.handle("netcatty:sessionLogs:createAndOpen", createAndOpenSessionLog);
+  ipcMain.handle("netcatty:sessionLog:manualStart", startManualSessionLog);
+  ipcMain.handle("netcatty:sessionLog:manualStop", stopManualSessionLog);
+  ipcMain.handle("netcatty:sessionLog:manualStatus", getManualSessionLogStatus);
 }
 
 module.exports = {
@@ -367,7 +414,9 @@ module.exports = {
   selectSessionLogsDir,
   autoSaveSessionLog,
   openSessionLogsDir,
-  createAndOpenSessionLog,
+  startManualSessionLog,
+  stopManualSessionLog,
+  getManualSessionLogStatus,
   stripAnsi,
   toLocalISOString,
   terminalDataToHtml,

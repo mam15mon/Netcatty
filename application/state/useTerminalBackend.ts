@@ -150,6 +150,24 @@ export const useTerminalBackend = () => {
     return bridge.getServerStats(sessionId);
   }, []);
 
+  const startManualSessionLog = useCallback(async (payload: Parameters<NonNullable<NetcattyBridge["startManualSessionLog"]>>[0]) => {
+    const bridge = netcattyBridge.get();
+    if (!bridge?.startManualSessionLog) throw new Error("startManualSessionLog unavailable");
+    return bridge.startManualSessionLog(payload);
+  }, []);
+
+  const stopManualSessionLog = useCallback(async (payload: Parameters<NonNullable<NetcattyBridge["stopManualSessionLog"]>>[0]) => {
+    const bridge = netcattyBridge.get();
+    if (!bridge?.stopManualSessionLog) throw new Error("stopManualSessionLog unavailable");
+    return bridge.stopManualSessionLog(payload);
+  }, []);
+
+  const getManualSessionLogStatus = useCallback(async (payload: Parameters<NonNullable<NetcattyBridge["getManualSessionLogStatus"]>>[0]) => {
+    const bridge = netcattyBridge.get();
+    if (!bridge?.getManualSessionLogStatus) throw new Error("getManualSessionLogStatus unavailable");
+    return bridge.getManualSessionLogStatus(payload);
+  }, []);
+
   return {
     backendAvailable,
     telnetAvailable,
@@ -169,6 +187,9 @@ export const useTerminalBackend = () => {
     getSessionRemoteInfo,
     getSessionDistroInfo,
     getServerStats,
+    startManualSessionLog,
+    stopManualSessionLog,
+    getManualSessionLogStatus,
     writeToSession,
     resizeSession,
     closeSession,

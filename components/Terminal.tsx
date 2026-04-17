@@ -167,6 +167,7 @@ interface TerminalProps {
   ) => void;
   // Session log configuration for real-time streaming
   sessionLog?: { enabled: boolean; directory: string; format: string };
+  autoSessionLogEnabled?: boolean;
 }
 
 // Helper function to format network speed (bytes/sec) to human-readable format
@@ -227,6 +228,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   onBroadcastInput,
   onSnippetExecutorChange,
   sessionLog,
+  autoSessionLogEnabled = false,
 }) => {
   // Timeout for connection - increased to 120s to allow time for keyboard-interactive (2FA) authentication
   const CONNECTION_TIMEOUT = 120000;
@@ -333,6 +335,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   const [progressValue, setProgressValue] = useState(15);
   const [hasSelection, setHasSelection] = useState(false);
   const [isDisconnectedDialogDismissed, setIsDisconnectedDialogDismissed] = useState(false);
+  const [isManualSessionLogging, setIsManualSessionLogging] = useState(false);
 
   const statusRef = useRef<TerminalSession["status"]>(status);
   statusRef.current = status;
@@ -353,6 +356,29 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     }, 200);
     return () => clearTimeout(timer);
   }, [status]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const syncManualLogStatus = async () => {
+      try {
+        const result = await terminalBackend.getManualSessionLogStatus({ sessionId });
+        if (!cancelled && result?.success) {
+          setIsManualSessionLogging(!!result.isLogging);
+        }
+      } catch {
+        if (!cancelled) {
+          setIsManualSessionLogging(false);
+        }
+      }
+    };
+
+    void syncManualLogStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, terminalBackend]);
 
   const [chainProgress, setChainProgress] = useState<{
     currentHop: number;
@@ -1407,34 +1433,42 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     setShowSFTP(true);
   };
 
-  const handleCreateSessionLog = async () => {
-    const bridge = window.netcatty;
-    if (!bridge?.createAndOpenSessionLog) {
-      toast.error(t("terminal.toolbar.sessionLogFailed"));
+  const handleToggleSessionLog = async () => {
+    if (autoSessionLogEnabled) {
+      toast.warning(t("terminal.toolbar.sessionLogAutoEnabled"));
       return;
     }
 
-    let terminalData = "";
     try {
-      terminalData = serializeAddonRef.current?.serialize() ?? "";
-    } catch (err) {
-      logger.warn("[Terminal] Failed to serialize terminal data for session log:", err);
-    }
+      if (isManualSessionLogging) {
+        const stopResult = await terminalBackend.stopManualSessionLog({ sessionId });
+        if (stopResult?.success && stopResult.stopped) {
+          setIsManualSessionLogging(false);
+          toast.success(t("terminal.toolbar.sessionLogStopped"));
+        } else if (!stopResult?.success) {
+          toast.error(stopResult?.error || t("terminal.toolbar.sessionLogFailed"));
+        }
+        return;
+      }
 
-    try {
-      const result = await bridge.createAndOpenSessionLog({
-        directory: sessionLog?.directory,
+      const startResult = await terminalBackend.startManualSessionLog({
+        sessionId,
         sessionName: host.label || host.hostname || sessionId,
-        terminalData,
+        preferredDirectory: sessionLog?.directory,
       });
 
-      if (result?.success) {
-        toast.success(t("terminal.toolbar.sessionLogCreated"));
+      if (startResult?.canceled) {
+        return;
+      }
+
+      if (startResult?.success && startResult.started) {
+        setIsManualSessionLogging(true);
+        toast.success(t("terminal.toolbar.sessionLogStarted"));
       } else {
-        toast.error(result?.error || t("terminal.toolbar.sessionLogFailed"));
+        toast.error(startResult?.error || t("terminal.toolbar.sessionLogFailed"));
       }
     } catch (err) {
-      logger.error("[Terminal] Failed to create/open session log:", err);
+      logger.error("[Terminal] Failed to toggle manual session log:", err);
       toast.error(t("terminal.toolbar.sessionLogFailed"));
     }
   };
@@ -1663,7 +1697,9 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       onOpenScripts={onOpenScripts ?? (() => {})}
       onOpenTheme={onOpenTheme ?? (() => {})}
       showLogButton={!inWorkspace}
-      onCreateSessionLog={handleCreateSessionLog}
+      onToggleSessionLog={handleToggleSessionLog}
+      isSessionLogging={isManualSessionLogging}
+      isSessionLogDisabled={autoSessionLogEnabled}
       onUpdateHost={onUpdateHost}
       showClose={opts?.showClose}
       onClose={() => onCloseSession?.(sessionId)}

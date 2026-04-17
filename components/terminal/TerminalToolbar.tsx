@@ -19,7 +19,9 @@ export interface TerminalToolbarProps {
     onOpenScripts: () => void;
     onOpenTheme: () => void;
     showLogButton?: boolean;
-    onCreateSessionLog?: () => void;
+    onToggleSessionLog?: () => void;
+    isSessionLogging?: boolean;
+    isSessionLogDisabled?: boolean;
     onUpdateHost?: (host: Host) => void;
     showClose?: boolean;
     onClose?: () => void;
@@ -39,7 +41,9 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
     onOpenScripts,
     onOpenTheme,
     showLogButton,
-    onCreateSessionLog,
+    onToggleSessionLog,
+    isSessionLogging,
+    isSessionLogDisabled,
     onUpdateHost,
     showClose,
     onClose,
@@ -152,20 +156,36 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
                 <TooltipContent>{t("terminal.toolbar.terminalSettings")}</TooltipContent>
             </Tooltip>
 
-            {showLogButton && onCreateSessionLog && (
+            {showLogButton && onToggleSessionLog && (
                 <Tooltip>
                     <TooltipTrigger asChild>
                         <Button
                             variant="secondary"
                             size="icon"
-                            className={buttonBase}
-                            aria-label={t("terminal.toolbar.sessionLog")}
-                            onClick={onCreateSessionLog}
+                            className={cn(
+                                buttonBase,
+                                isSessionLogging && "text-red-500"
+                            )}
+                            aria-label={
+                                isSessionLogDisabled
+                                    ? t("terminal.toolbar.sessionLogDisabledByAuto")
+                                    : (isSessionLogging
+                                        ? t("terminal.toolbar.sessionLogStop")
+                                        : t("terminal.toolbar.sessionLogStart"))
+                            }
+                            disabled={isSessionLogDisabled}
+                            onClick={onToggleSessionLog}
                         >
                             <FileText size={12} />
                         </Button>
                     </TooltipTrigger>
-                    <TooltipContent>{t("terminal.toolbar.sessionLog")}</TooltipContent>
+                    <TooltipContent>
+                        {isSessionLogDisabled
+                            ? t("terminal.toolbar.sessionLogDisabledByAuto")
+                            : (isSessionLogging
+                                ? t("terminal.toolbar.sessionLogStop")
+                                : t("terminal.toolbar.sessionLogStart"))}
+                    </TooltipContent>
                 </Tooltip>
             )}
 
