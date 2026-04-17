@@ -643,7 +643,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     // UI-matched theme passed via terminalTheme prop.
     if (followAppTerminalTheme && !themePreviewId) return terminalTheme;
     const themeId = themePreviewId ?? resolveHostTerminalThemeId(
-      { theme: host.theme, themeOverride: host.themeOverride } as Pick<Host, 'theme' | 'themeOverride'>,
+      host,
       terminalTheme.id,
     );
     if (themeId) {

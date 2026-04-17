@@ -2411,6 +2411,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
           })}
         </div>
       </div>
+    </div>
     </AIStateProvider>
   );
 };
