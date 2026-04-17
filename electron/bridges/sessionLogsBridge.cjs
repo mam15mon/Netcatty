@@ -4,6 +4,7 @@
  */
 
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { dialog } = require("electron");
 
@@ -21,6 +22,31 @@ function toLocalISOString(date = new Date()) {
   const seconds = pad(date.getSeconds());
 
   return `${year}-${month}-${day}T${hours}-${minutes}-${seconds}`;
+}
+
+function sanitizeFileName(name) {
+  const cleaned = String(name || "")
+    .trim()
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
+    .replace(/\s+/g, " ")
+    .replace(/[. ]+$/g, "");
+  return cleaned || "session";
+}
+
+async function makeUniqueFilePath(directory, fileName) {
+  const parsed = path.parse(fileName);
+  let candidate = path.join(directory, fileName);
+  let index = 1;
+
+  while (true) {
+    try {
+      await fs.promises.access(candidate);
+      candidate = path.join(directory, `${parsed.name}_${index}${parsed.ext}`);
+      index += 1;
+    } catch {
+      return candidate;
+    }
+  }
 }
 
 /**
@@ -292,6 +318,39 @@ async function openSessionLogsDir(event, payload) {
 }
 
 /**
+ * Create a .log file in configured session log directory (or user home) and open the directory
+ */
+async function createAndOpenSessionLog(event, payload = {}) {
+  const { shell } = require("electron");
+  const { directory, sessionName, terminalData } = payload;
+  const targetDirectory = typeof directory === "string" && directory.trim()
+    ? directory.trim()
+    : os.homedir();
+
+  try {
+    await fs.promises.mkdir(targetDirectory, { recursive: true });
+
+    const safeSessionName = sanitizeFileName(sessionName);
+    const fileName = `${safeSessionName}_${toLocalISOString(new Date())}.log`;
+    const filePath = await makeUniqueFilePath(targetDirectory, fileName);
+    await fs.promises.writeFile(
+      filePath,
+      typeof terminalData === "string" ? terminalData : "",
+      "utf8",
+    );
+
+    const openError = await shell.openPath(targetDirectory);
+    if (openError) {
+      return { success: false, error: openError, filePath, directory: targetDirectory };
+    }
+
+    return { success: true, filePath, directory: targetDirectory };
+  } catch (err) {
+    return { success: false, error: err?.message || String(err), directory: targetDirectory };
+  }
+}
+
+/**
  * Register IPC handlers for session logs operations
  */
 function registerHandlers(ipcMain) {
@@ -299,6 +358,7 @@ function registerHandlers(ipcMain) {
   ipcMain.handle("netcatty:sessionLogs:selectDir", selectSessionLogsDir);
   ipcMain.handle("netcatty:sessionLogs:autoSave", autoSaveSessionLog);
   ipcMain.handle("netcatty:sessionLogs:openDir", openSessionLogsDir);
+  ipcMain.handle("netcatty:sessionLogs:createAndOpen", createAndOpenSessionLog);
 }
 
 module.exports = {
@@ -307,6 +367,7 @@ module.exports = {
   selectSessionLogsDir,
   autoSaveSessionLog,
   openSessionLogsDir,
+  createAndOpenSessionLog,
   stripAnsi,
   toLocalISOString,
   terminalDataToHtml,

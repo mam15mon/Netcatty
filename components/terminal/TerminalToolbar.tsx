@@ -2,7 +2,7 @@
  * Terminal Toolbar
  * Displays SFTP, Scripts, Theme, Highlight, Search buttons and close button in terminal status bar
  */
-import { Check, FolderInput, Languages, X, Zap, Palette, Search } from 'lucide-react';
+import { Check, FileText, FolderInput, Languages, X, Zap, Palette, Search } from 'lucide-react';
 import React, { useState } from 'react';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { Host } from '../../types';
@@ -18,6 +18,8 @@ export interface TerminalToolbarProps {
     onOpenSFTP: () => void;
     onOpenScripts: () => void;
     onOpenTheme: () => void;
+    showLogButton?: boolean;
+    onCreateSessionLog?: () => void;
     onUpdateHost?: (host: Host) => void;
     showClose?: boolean;
     onClose?: () => void;
@@ -36,6 +38,8 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
     onOpenSFTP,
     onOpenScripts,
     onOpenTheme,
+    showLogButton,
+    onCreateSessionLog,
     onUpdateHost,
     showClose,
     onClose,
@@ -147,6 +151,23 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
                 </TooltipTrigger>
                 <TooltipContent>{t("terminal.toolbar.terminalSettings")}</TooltipContent>
             </Tooltip>
+
+            {showLogButton && onCreateSessionLog && (
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            variant="secondary"
+                            size="icon"
+                            className={buttonBase}
+                            aria-label={t("terminal.toolbar.sessionLog")}
+                            onClick={onCreateSessionLog}
+                        >
+                            <FileText size={12} />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{t("terminal.toolbar.sessionLog")}</TooltipContent>
+                </Tooltip>
+            )}
 
             <HostKeywordHighlightPopover
                 host={host}

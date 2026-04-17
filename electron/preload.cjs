@@ -1061,6 +1061,8 @@ const api = {
     ipcRenderer.invoke("netcatty:sessionLogs:autoSave", payload),
   openSessionLogsDir: (directory) =>
     ipcRenderer.invoke("netcatty:sessionLogs:openDir", { directory }),
+  createAndOpenSessionLog: (payload) =>
+    ipcRenderer.invoke("netcatty:sessionLogs:createAndOpen", payload),
 
   // Crash Logs
   getCrashLogs: () =>

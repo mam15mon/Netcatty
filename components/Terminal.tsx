@@ -1407,6 +1407,38 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     setShowSFTP(true);
   };
 
+  const handleCreateSessionLog = async () => {
+    const bridge = window.netcatty;
+    if (!bridge?.createAndOpenSessionLog) {
+      toast.error(t("terminal.toolbar.sessionLogFailed"));
+      return;
+    }
+
+    let terminalData = "";
+    try {
+      terminalData = serializeAddonRef.current?.serialize() ?? "";
+    } catch (err) {
+      logger.warn("[Terminal] Failed to serialize terminal data for session log:", err);
+    }
+
+    try {
+      const result = await bridge.createAndOpenSessionLog({
+        directory: sessionLog?.directory,
+        sessionName: host.label || host.hostname || sessionId,
+        terminalData,
+      });
+
+      if (result?.success) {
+        toast.success(t("terminal.toolbar.sessionLogCreated"));
+      } else {
+        toast.error(result?.error || t("terminal.toolbar.sessionLogFailed"));
+      }
+    } catch (err) {
+      logger.error("[Terminal] Failed to create/open session log:", err);
+      toast.error(t("terminal.toolbar.sessionLogFailed"));
+    }
+  };
+
   const handleCancelConnect = () => {
     retryTokenRef.current = null;
     setIsCancelling(true);
@@ -1630,6 +1662,8 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       onOpenSFTP={handleOpenSFTP}
       onOpenScripts={onOpenScripts ?? (() => {})}
       onOpenTheme={onOpenTheme ?? (() => {})}
+      showLogButton={!inWorkspace}
+      onCreateSessionLog={handleCreateSessionLog}
       onUpdateHost={onUpdateHost}
       showClose={opts?.showClose}
       onClose={() => onCloseSession?.(sessionId)}
