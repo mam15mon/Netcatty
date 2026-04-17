@@ -319,7 +319,13 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   const autocompleteRepositionRef = useRef<(() => void) | undefined>(undefined);
 
   const terminalBackend = useTerminalBackend();
-  const { resizeSession, setSessionEncoding } = terminalBackend;
+  const {
+    resizeSession,
+    setSessionEncoding,
+    startManualSessionLog,
+    stopManualSessionLog,
+    getManualSessionLogStatus,
+  } = terminalBackend;
 
 
 
@@ -362,7 +368,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
 
     const syncManualLogStatus = async () => {
       try {
-        const result = await terminalBackend.getManualSessionLogStatus({ sessionId });
+        const result = await getManualSessionLogStatus({ sessionId });
         if (!cancelled && result?.success) {
           setIsManualSessionLogging(!!result.isLogging);
         }
@@ -378,7 +384,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [sessionId, terminalBackend]);
+  }, [getManualSessionLogStatus, sessionId]);
 
   const [chainProgress, setChainProgress] = useState<{
     currentHop: number;
@@ -1441,7 +1447,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
 
     try {
       if (isManualSessionLogging) {
-        const stopResult = await terminalBackend.stopManualSessionLog({ sessionId });
+        const stopResult = await stopManualSessionLog({ sessionId });
         if (stopResult?.success && stopResult.stopped) {
           setIsManualSessionLogging(false);
           toast.success(t("terminal.toolbar.sessionLogStopped"));
@@ -1451,7 +1457,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
         return;
       }
 
-      const startResult = await terminalBackend.startManualSessionLog({
+      const startResult = await startManualSessionLog({
         sessionId,
         sessionName: host.label || host.hostname || sessionId,
         preferredDirectory: sessionLog?.directory,

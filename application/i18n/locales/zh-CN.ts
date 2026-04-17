@@ -1473,6 +1473,14 @@ const zhCN: Messages = {
   'settings.terminal.rendering.renderer.desc': '选择终端渲染技术。自动模式会在低内存设备上使用 DOM 渲染。更改将在新终端会话中生效。',
   'settings.terminal.rendering.auto': '自动',
 
+  // Settings > Terminal > Workspace Focus Indicator
+  'settings.terminal.section.workspaceFocus': '工作区焦点指示',
+  'settings.terminal.workspaceFocus.style': '焦点指示样式',
+  'settings.terminal.workspaceFocus.style.desc': '如何指示分屏视图中的当前焦点窗格。',
+  'settings.terminal.workspaceFocus.dim': '调暗非焦点窗格',
+  'settings.terminal.workspaceFocus.border': '聚焦窗格显示边框',
+
+
   // Settings > Terminal > Autocomplete
   'settings.terminal.section.autocomplete': '自动补全',
   'settings.terminal.autocomplete.enabled': '启用自动补全',
