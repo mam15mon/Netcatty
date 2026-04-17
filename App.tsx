@@ -47,6 +47,7 @@ import { QuickAddSnippetDialog } from './components/QuickAddSnippetDialog';
 import { KeyboardInteractiveModal, KeyboardInteractiveRequest } from './components/KeyboardInteractiveModal';
 import { PassphraseModal, PassphraseRequest } from './components/PassphraseModal';
 import { cn } from './lib/utils';
+import { matchesSearchQuery } from './lib/searchMatcher';
 import { classifyLocalShellType } from './lib/localShell';
 import { useDiscoveredShells, resolveShellSetting } from './lib/useDiscoveredShells';
 import { ConnectionLog, Host, HostProtocol, SerialConfig, TerminalSession, TerminalTheme } from './types';
@@ -1071,12 +1072,13 @@ function App({ settings }: { settings: SettingsState }) {
   // Shared hotkey action handler - used by both global handler and terminal callback
   const executeHotkeyAction = useCallback((action: string, e: KeyboardEvent) => {
     // Build complete tab list: vault + (sftp when visible) + sessions/workspaces.
-    // Hiding the SFTP tab must also remove it from keyboard cycling so nextTab
-    // doesn't land on a hidden tab (which would get redirected back) and so
-    // number shortcuts don't shift.
+    // Number shortcuts still use this full list.
     const allTabs = settings.showSftpTab
       ? ['vault', 'sftp', ...orderedTabs]
       : ['vault', ...orderedTabs];
+    // Ctrl+Tab / Ctrl+Shift+Tab should only cycle terminal-related tabs
+    // (sessions/workspaces/log views), not root tabs like Vault/SFTP.
+    const terminalTabs = orderedTabs;
     switch (action) {
       case 'switchToTab': {
         // Get the number key pressed (1-9)
@@ -1090,23 +1092,25 @@ function App({ settings }: { settings: SettingsState }) {
       }
       case 'nextTab': {
         const currentId = activeTabStore.getActiveTabId();
-        const currentIdx = allTabs.indexOf(currentId);
-        if (currentIdx !== -1 && allTabs.length > 0) {
-          const nextIdx = (currentIdx + 1) % allTabs.length;
-          setActiveTabId(allTabs[nextIdx]);
-        } else if (allTabs.length > 0) {
-          setActiveTabId(allTabs[0]);
+        const currentIdx = terminalTabs.indexOf(currentId);
+        if (terminalTabs.length === 0) break;
+        if (currentIdx !== -1) {
+          const nextIdx = (currentIdx + 1) % terminalTabs.length;
+          setActiveTabId(terminalTabs[nextIdx]);
+        } else {
+          setActiveTabId(terminalTabs[0]);
         }
         break;
       }
       case 'prevTab': {
         const currentId = activeTabStore.getActiveTabId();
-        const currentIdx = allTabs.indexOf(currentId);
-        if (currentIdx !== -1 && allTabs.length > 0) {
-          const prevIdx = (currentIdx - 1 + allTabs.length) % allTabs.length;
-          setActiveTabId(allTabs[prevIdx]);
-        } else if (allTabs.length > 0) {
-          setActiveTabId(allTabs[allTabs.length - 1]);
+        const currentIdx = terminalTabs.indexOf(currentId);
+        if (terminalTabs.length === 0) break;
+        if (currentIdx !== -1) {
+          const prevIdx = (currentIdx - 1 + terminalTabs.length) % terminalTabs.length;
+          setActiveTabId(terminalTabs[prevIdx]);
+        } else {
+          setActiveTabId(terminalTabs[terminalTabs.length - 1]);
         }
         break;
       }
@@ -1299,12 +1303,10 @@ function App({ settings }: { settings: SettingsState }) {
 
   const quickResults = useMemo(() => {
     if (!isQuickSwitcherOpen) return [];
-    const term = quickSearch.trim().toLowerCase();
+    const term = quickSearch.trim();
     const filtered = term
       ? hosts.filter(h =>
-        h.label.toLowerCase().includes(term) ||
-        h.hostname.toLowerCase().includes(term) ||
-        (h.group || '').toLowerCase().includes(term)
+        matchesSearchQuery(term, h.label, h.hostname, h.group || '', ...(h.tags || []))
       )
       : hosts;
     return filtered;

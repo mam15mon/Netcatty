@@ -10,6 +10,7 @@ import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "
 import { useI18n } from "../application/i18n/I18nProvider";
 import { Host, TerminalSession, Workspace } from "../types";
 import { KeyBinding } from "../domain/models";
+import { matchesSearchQuery } from "../lib/searchMatcher";
 import { useDiscoveredShells, getShellIconPath, isMonochromeShellIcon } from "../lib/useDiscoveredShells";
 
 type QuickSwitcherItem = {
@@ -94,7 +95,7 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
     const list = !query.trim()
       ? discoveredShells
       : discoveredShells.filter(
-          (s) => s.name.toLowerCase().includes(query.toLowerCase()) || s.id.toLowerCase().includes(query.toLowerCase())
+          (s) => matchesSearchQuery(query, s.name, s.id)
         );
     // Default shell first
     return [...list].sort((a, b) => (a.isDefault === b.isDefault ? 0 : a.isDefault ? -1 : 1));

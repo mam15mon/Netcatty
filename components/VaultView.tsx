@@ -45,6 +45,7 @@ import {
   STORAGE_KEY_VAULT_SIDEBAR_COLLAPSED,
 } from "../infrastructure/config/storageKeys";
 import { cn } from "../lib/utils";
+import { matchesSearchQuery } from "../lib/searchMatcher";
 import { useInstantThemeSwitch } from "../lib/useInstantThemeSwitch";
 import {
   ConnectionLog,
@@ -343,6 +344,16 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
     },
     [isSearchQuickConnect, handleConnectClick],
   );
+
+  const matchesHostSearch = useCallback((host: Host, query: string) => {
+    return matchesSearchQuery(
+      query,
+      host.label,
+      host.hostname,
+      host.group || "",
+      ...(host.tags || []),
+    );
+  }, []);
 
   // Check if host has multiple protocols enabled (using effective/resolved host)
   const hasMultipleProtocols = useCallback((host: Host) => {
@@ -955,13 +966,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
       });
     }
     if (search.trim()) {
-      const s = search.toLowerCase();
-      filtered = filtered.filter(
-        (h) =>
-          h.label.toLowerCase().includes(s) ||
-          h.hostname.toLowerCase().includes(s) ||
-          h.tags.some((t) => t.toLowerCase().includes(s)),
-      );
+      filtered = filtered.filter((h) => matchesHostSearch(h, search));
     }
     // Apply tag filter
     if (selectedTags.length > 0) {
@@ -990,7 +995,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
       }
     });
     return filtered;
-  }, [hosts, selectedGroupPath, showOnlyUngroupedHostsInRoot, search, selectedTags, sortMode]);
+  }, [hosts, matchesHostSearch, selectedGroupPath, showOnlyUngroupedHostsInRoot, search, selectedTags, sortMode]);
 
   // Pinned hosts for root-level display (not inside a subgroup)
   // Respects active search and tag filters
@@ -998,13 +1003,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
     if (selectedGroupPath) return [];
     let filtered = hosts.filter((h) => h.pinned);
     if (search.trim()) {
-      const s = search.toLowerCase();
-      filtered = filtered.filter(
-        (h) =>
-          h.label.toLowerCase().includes(s) ||
-          h.hostname.toLowerCase().includes(s) ||
-          h.tags.some((t) => t.toLowerCase().includes(s)),
-      );
+      filtered = filtered.filter((h) => matchesHostSearch(h, search));
     }
     if (selectedTags.length > 0) {
       filtered = filtered.filter((h) =>
@@ -1012,7 +1011,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
       );
     }
     return filtered.sort((a, b) => a.label.localeCompare(b.label));
-  }, [hosts, selectedGroupPath, search, selectedTags]);
+  }, [hosts, matchesHostSearch, selectedGroupPath, search, selectedTags]);
 
   // Recently connected hosts for root-level display
   // Respects active search and tag filters
@@ -1020,13 +1019,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
     if (selectedGroupPath) return [];
     let filtered = hosts.filter((h) => h.lastConnectedAt);
     if (search.trim()) {
-      const s = search.toLowerCase();
-      filtered = filtered.filter(
-        (h) =>
-          h.label.toLowerCase().includes(s) ||
-          h.hostname.toLowerCase().includes(s) ||
-          h.tags.some((t) => t.toLowerCase().includes(s)),
-      );
+      filtered = filtered.filter((h) => matchesHostSearch(h, search));
     }
     if (selectedTags.length > 0) {
       filtered = filtered.filter((h) =>
@@ -1036,7 +1029,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
     return filtered
       .sort((a, b) => (b.lastConnectedAt || 0) - (a.lastConnectedAt || 0))
       .slice(0, 6);
-  }, [hosts, selectedGroupPath, search, selectedTags]);
+  }, [hosts, matchesHostSearch, selectedGroupPath, search, selectedTags]);
 
   // No longer deduplicate pinned/recent hosts from the main list,
   // so hosts always appear in their groups regardless of pinned/recent status.
@@ -1052,13 +1045,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
   const treeViewHosts = useMemo(() => {
     let filtered = hosts;
     if (search.trim()) {
-      const s = search.toLowerCase();
-      filtered = filtered.filter(
-        (h) =>
-          h.label.toLowerCase().includes(s) ||
-          h.hostname.toLowerCase().includes(s) ||
-          h.tags.some((t) => t.toLowerCase().includes(s)),
-      );
+      filtered = filtered.filter((h) => matchesHostSearch(h, search));
     }
     // Apply tag filter
     if (selectedTags.length > 0) {
@@ -1087,7 +1074,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
       }
     });
     return filtered;
-  }, [hosts, search, selectedTags, sortMode]);
+  }, [hosts, matchesHostSearch, search, selectedTags, sortMode]);
   const treeViewHostIds = useMemo(() => treeViewHosts.map((host) => host.id), [treeViewHosts]);
 
   const groupedDisplayHosts = useMemo(() => {
