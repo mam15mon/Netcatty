@@ -109,6 +109,11 @@ type DropTarget =
   | { kind: "root" }
   | { kind: "group"; path: string };
 
+type HostSelectionOptions = {
+  event?: Pick<React.MouseEvent, "shiftKey" | "ctrlKey" | "metaKey">;
+  orderedHostIds?: string[];
+};
+
 // Props without isActive - it's now subscribed internally
 interface VaultViewProps {
   hosts: Host[];
@@ -532,22 +537,88 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
     setLastPinnedId(isPinning ? hostId : null);
   }, [onUpdateHosts]);
 
-  const toggleHostSelection = useCallback((hostId: string) => {
+  const selectionAnchorHostIdRef = useRef<string | null>(null);
+  const toggleHostSelection = useCallback((hostId: string, options?: HostSelectionOptions) => {
+    const shiftKey = !!options?.event?.shiftKey;
+    const ctrlOrMetaKey = !!options?.event?.ctrlKey || !!options?.event?.metaKey;
+    const orderedHostIds = options?.orderedHostIds ?? [];
+
+    if (!isMultiSelectMode && (shiftKey || ctrlOrMetaKey)) {
+      setIsMultiSelectMode(true);
+    }
+
     setSelectedHostIds(prev => {
-      const next = new Set(prev);
-      if (next.has(hostId)) {
-        next.delete(hostId);
+      let next = new Set(prev);
+
+      if (shiftKey && orderedHostIds.length > 0) {
+        const anchorId = selectionAnchorHostIdRef.current && orderedHostIds.includes(selectionAnchorHostIdRef.current)
+          ? selectionAnchorHostIdRef.current
+          : hostId;
+        const anchorIndex = orderedHostIds.indexOf(anchorId);
+        const targetIndex = orderedHostIds.indexOf(hostId);
+
+        if (anchorIndex >= 0 && targetIndex >= 0) {
+          if (!ctrlOrMetaKey) {
+            next = new Set<string>();
+          }
+          const [start, end] = anchorIndex <= targetIndex
+            ? [anchorIndex, targetIndex]
+            : [targetIndex, anchorIndex];
+          for (let index = start; index <= end; index += 1) {
+            next.add(orderedHostIds[index]);
+          }
+        } else if (ctrlOrMetaKey) {
+          if (next.has(hostId)) {
+            next.delete(hostId);
+          } else {
+            next.add(hostId);
+          }
+        } else {
+          next = new Set<string>([hostId]);
+        }
+      } else if (ctrlOrMetaKey) {
+        if (next.has(hostId)) {
+          next.delete(hostId);
+        } else {
+          next.add(hostId);
+        }
+      } else if (isMultiSelectMode) {
+        next = new Set<string>([hostId]);
       } else {
-        next.add(hostId);
+        if (next.has(hostId)) {
+          next.delete(hostId);
+        } else {
+          next.add(hostId);
+        }
       }
+
       return next;
     });
-  }, []);
+
+    selectionAnchorHostIdRef.current = hostId;
+  }, [isMultiSelectMode]);
 
   const clearHostSelection = useCallback(() => {
     setSelectedHostIds(new Set());
     setIsMultiSelectMode(false);
+    selectionAnchorHostIdRef.current = null;
   }, []);
+
+  const connectSelectedHosts = useCallback(() => {
+    if (selectedHostIds.size === 0) return;
+    const selectedHosts = hosts.filter((host) => selectedHostIds.has(host.id));
+    if (selectedHosts.length === 0) return;
+
+    if (selectedHosts.length === 1) {
+      handleHostConnect(selectedHosts[0]);
+    } else {
+      selectedHosts.forEach((host) => {
+        onConnect(sanitizeHost(host));
+      });
+    }
+
+    clearHostSelection();
+  }, [clearHostSelection, handleHostConnect, hosts, onConnect, selectedHostIds]);
 
   const deleteSelectedHosts = useCallback(() => {
     if (selectedHostIds.size === 0) return;
@@ -974,6 +1045,8 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
     () => displayedHosts.filter((h) => selectedGroupPath || !pinnedRecentIds.has(h.id)),
     [displayedHosts, selectedGroupPath, pinnedRecentIds],
   );
+  const pinnedHostIds = useMemo(() => pinnedHosts.map((host) => host.id), [pinnedHosts]);
+  const recentHostIds = useMemo(() => recentHosts.map((host) => host.id), [recentHosts]);
 
   // For tree view: apply search, tag filter, and sorting, but not group filtering
   const treeViewHosts = useMemo(() => {
@@ -1015,6 +1088,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
     });
     return filtered;
   }, [hosts, search, selectedTags, sortMode]);
+  const treeViewHostIds = useMemo(() => treeViewHosts.map((host) => host.id), [treeViewHosts]);
 
   const groupedDisplayHosts = useMemo(() => {
     if (sortMode !== "group") return null;
@@ -1483,6 +1557,33 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
       justifyContent: "start" as const,
     }
     : undefined;
+
+  useEffect(() => {
+    const handleWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Enter") return;
+      if (!isHostsSectionActive) return;
+      if (selectedHostIds.size === 0) return;
+
+      const target = event.target as HTMLElement | null;
+      if (target) {
+        const tagName = target.tagName;
+        if (
+          target.isContentEditable ||
+          tagName === "INPUT" ||
+          tagName === "TEXTAREA" ||
+          tagName === "SELECT"
+        ) {
+          return;
+        }
+      }
+
+      event.preventDefault();
+      connectSelectedHosts();
+    };
+
+    window.addEventListener("keydown", handleWindowKeyDown);
+    return () => window.removeEventListener("keydown", handleWindowKeyDown);
+  }, [connectSelectedHosts, isHostsSectionActive, selectedHostIds.size]);
 
   const isSameDropTarget = useCallback((a: DropTarget | null, b: DropTarget | null) => {
     if (!a || !b) return a === b;
@@ -2079,12 +2180,12 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                                     e.dataTransfer.effectAllowed = "move";
                                     e.dataTransfer.setData("host-id", host.id);
                                   }}
-                                  onClick={() => {
-                                    if (isMultiSelectMode) {
-                                      toggleHostSelection(host.id);
-                                    } else {
-                                      handleHostConnect(safeHost);
+                                  onClick={(event) => {
+                                    if (isMultiSelectMode || event.shiftKey || event.ctrlKey || event.metaKey) {
+                                      toggleHostSelection(host.id, { event, orderedHostIds: pinnedHostIds });
+                                      return;
                                     }
+                                    handleHostConnect(safeHost);
                                   }}
                                 >
                                   {viewMode === "grid" && (
@@ -2181,12 +2282,12 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                                     e.dataTransfer.effectAllowed = "move";
                                     e.dataTransfer.setData("host-id", host.id);
                                   }}
-                                  onClick={() => {
-                                    if (isMultiSelectMode) {
-                                      toggleHostSelection(host.id);
-                                    } else {
-                                      handleHostConnect(safeHost);
+                                  onClick={(event) => {
+                                    if (isMultiSelectMode || event.shiftKey || event.ctrlKey || event.metaKey) {
+                                      toggleHostSelection(host.id, { event, orderedHostIds: recentHostIds });
+                                      return;
                                     }
+                                    handleHostConnect(safeHost);
                                   }}
                                 >
                                   <div className="flex items-center gap-3 h-full">
@@ -2481,6 +2582,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                       isMultiSelectMode={isMultiSelectMode}
                       selectedHostIds={selectedHostIds}
                       toggleHostSelection={toggleHostSelection}
+                      orderedHostIds={treeViewHostIds}
                       getDropTargetClasses={(path) =>
                         getDropTargetClasses({ kind: "group", path })
                       }
@@ -2510,7 +2612,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                               )}
                               style={viewMode === "grid" ? splitViewGridStyle : undefined}
                             >
-                              {group.hosts.filter((h) => selectedGroupPath || !pinnedRecentIds.has(h.id)).map((host) => {
+                              {group.hosts.filter((h) => selectedGroupPath || !pinnedRecentIds.has(h.id)).map((host, _hostIndex, sectionHosts) => {
                                 const safeHost = sanitizeHost(host);
                                 const effectiveDistro = getEffectiveHostDistro(safeHost);
                                 const distroBadge = {
@@ -2532,12 +2634,15 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                                           e.dataTransfer.effectAllowed = "move";
                                           e.dataTransfer.setData("host-id", host.id);
                                         }}
-                                        onClick={() => {
-                                          if (isMultiSelectMode) {
-                                            toggleHostSelection(host.id);
-                                          } else {
-                                            handleHostConnect(safeHost);
+                                        onClick={(event) => {
+                                          if (isMultiSelectMode || event.shiftKey || event.ctrlKey || event.metaKey) {
+                                            toggleHostSelection(host.id, {
+                                              event,
+                                              orderedHostIds: sectionHosts.map((sectionHost) => sectionHost.id),
+                                            });
+                                            return;
                                           }
+                                          handleHostConnect(safeHost);
                                         }}
                                       >
                                         {host.pinned && viewMode === "grid" && (
@@ -2549,7 +2654,10 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                                               className="shrink-0"
                                               onClick={(e) => {
                                                 e.stopPropagation();
-                                                toggleHostSelection(host.id);
+                                                toggleHostSelection(host.id, {
+                                                  event: e,
+                                                  orderedHostIds: sectionHosts.map((sectionHost) => sectionHost.id),
+                                                });
                                               }}
                                             >
                                               {selectedHostIds.has(host.id) ? (
@@ -2655,7 +2763,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                       )}
                       style={viewMode === "grid" ? splitViewGridStyle : undefined}
                     >
-                      {visibleDisplayedHosts.map((host) => {
+                      {visibleDisplayedHosts.map((host, _hostIndex, sectionHosts) => {
                           const safeHost = sanitizeHost(host);
                           const effectiveDistro = getEffectiveHostDistro(safeHost);
                           const distroBadge = {
@@ -2677,12 +2785,15 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                                     e.dataTransfer.effectAllowed = "move";
                                     e.dataTransfer.setData("host-id", host.id);
                                   }}
-                                  onClick={() => {
-                                    if (isMultiSelectMode) {
-                                      toggleHostSelection(host.id);
-                                    } else {
-                                      handleHostConnect(safeHost);
+                                  onClick={(event) => {
+                                    if (isMultiSelectMode || event.shiftKey || event.ctrlKey || event.metaKey) {
+                                      toggleHostSelection(host.id, {
+                                        event,
+                                        orderedHostIds: sectionHosts.map((sectionHost) => sectionHost.id),
+                                      });
+                                      return;
                                     }
+                                    handleHostConnect(safeHost);
                                   }}
                                 >
                                   {host.pinned && viewMode === "grid" && (
@@ -2694,7 +2805,10 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                                         className="shrink-0"
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          toggleHostSelection(host.id);
+                                          toggleHostSelection(host.id, {
+                                            event: e,
+                                            orderedHostIds: sectionHosts.map((sectionHost) => sectionHost.id),
+                                          });
                                         }}
                                       >
                                         {selectedHostIds.has(host.id) ? (

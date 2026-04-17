@@ -11,6 +11,11 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } 
 import { DistroAvatar } from './DistroAvatar';
 import { Button } from './ui/button';
 
+type HostTreeSelectionOptions = {
+  event?: Pick<React.MouseEvent, "shiftKey" | "ctrlKey" | "metaKey">;
+  orderedHostIds?: string[];
+};
+
 interface HostTreeViewProps {
   groupTree: GroupNode[];
   hosts: Host[];
@@ -35,7 +40,8 @@ interface HostTreeViewProps {
 
   isMultiSelectMode?: boolean;
   selectedHostIds?: Set<string>;
-  toggleHostSelection?: (hostId: string) => void;
+  toggleHostSelection?: (hostId: string, options?: HostTreeSelectionOptions) => void;
+  orderedHostIds?: string[];
   getDropTargetClasses?: (target: string) => string;
   setDragOverDropTarget?: (target: string | null) => void;
 }
@@ -62,7 +68,8 @@ interface TreeNodeProps {
 
   isMultiSelectMode?: boolean;
   selectedHostIds?: Set<string>;
-  toggleHostSelection?: (hostId: string) => void;
+  toggleHostSelection?: (hostId: string, options?: HostTreeSelectionOptions) => void;
+  orderedHostIds?: string[];
   getDropTargetClasses?: (target: string) => string;
   setDragOverDropTarget?: (target: string | null) => void;
 }
@@ -91,6 +98,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
   isMultiSelectMode,
   selectedHostIds,
   toggleHostSelection,
+  orderedHostIds,
   getDropTargetClasses,
   setDragOverDropTarget,
 }) => {
@@ -258,6 +266,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
               isMultiSelectMode={isMultiSelectMode}
               selectedHostIds={selectedHostIds}
               toggleHostSelection={toggleHostSelection}
+              orderedHostIds={orderedHostIds}
               getDropTargetClasses={getDropTargetClasses}
               setDragOverDropTarget={setDragOverDropTarget}
             />
@@ -279,6 +288,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
               isMultiSelectMode={isMultiSelectMode}
               selectedHostIds={selectedHostIds}
               toggleHostSelection={toggleHostSelection}
+              orderedHostIds={orderedHostIds}
             />
           ))}
         </CollapsibleContent>
@@ -299,7 +309,8 @@ interface HostTreeItemProps {
 
   isMultiSelectMode?: boolean;
   selectedHostIds?: Set<string>;
-  toggleHostSelection?: (hostId: string) => void;
+  toggleHostSelection?: (hostId: string, options?: HostTreeSelectionOptions) => void;
+  orderedHostIds?: string[];
 }
 
 const HostTreeItem: React.FC<HostTreeItemProps> = ({
@@ -315,6 +326,7 @@ const HostTreeItem: React.FC<HostTreeItemProps> = ({
   isMultiSelectMode,
   selectedHostIds,
   toggleHostSelection,
+  orderedHostIds,
 }) => {
   const { t } = useI18n();
   const paddingLeft = `${depth * 20 + 12}px`;
@@ -340,9 +352,9 @@ const HostTreeItem: React.FC<HostTreeItemProps> = ({
           style={{ paddingLeft }}
           draggable={!isMultiSelectMode}
           onDragStart={(e) => e.dataTransfer.setData("host-id", host.id)}
-          onClick={() => {
-            if (isMultiSelectMode && toggleHostSelection) {
-              toggleHostSelection(host.id);
+          onClick={(event) => {
+            if ((isMultiSelectMode || event.shiftKey || event.ctrlKey || event.metaKey) && toggleHostSelection) {
+              toggleHostSelection(host.id, { event, orderedHostIds });
             } else {
               onConnect(safeHost);
             }
@@ -351,7 +363,7 @@ const HostTreeItem: React.FC<HostTreeItemProps> = ({
           {isMultiSelectMode && (
             <div className="mr-2 flex-shrink-0" onClick={(e) => {
               e.stopPropagation();
-              toggleHostSelection?.(host.id);
+              toggleHostSelection?.(host.id, { event: e, orderedHostIds });
             }}>
               {isSelected ? (
                 <CheckSquare size={18} className="text-primary" />
@@ -443,6 +455,7 @@ export const HostTreeView: React.FC<HostTreeViewProps> = ({
   isMultiSelectMode,
   selectedHostIds,
   toggleHostSelection,
+  orderedHostIds,
   getDropTargetClasses,
   setDragOverDropTarget,
 }) => {
@@ -568,6 +581,7 @@ export const HostTreeView: React.FC<HostTreeViewProps> = ({
           isMultiSelectMode={isMultiSelectMode}
           selectedHostIds={selectedHostIds}
           toggleHostSelection={toggleHostSelection}
+          orderedHostIds={orderedHostIds}
           getDropTargetClasses={getDropTargetClasses}
           setDragOverDropTarget={setDragOverDropTarget}
         />
@@ -588,6 +602,7 @@ export const HostTreeView: React.FC<HostTreeViewProps> = ({
           isMultiSelectMode={isMultiSelectMode}
           selectedHostIds={selectedHostIds}
           toggleHostSelection={toggleHostSelection}
+          orderedHostIds={orderedHostIds}
         />
       ))}
       

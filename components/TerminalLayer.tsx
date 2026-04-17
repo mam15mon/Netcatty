@@ -29,8 +29,9 @@ import { cn, normalizeLineEndings } from '../lib/utils';
 import { detectLocalOs } from '../lib/localShell';
 import { useStoredString } from '../application/state/useStoredString';
 import { useStoredNumber } from '../application/state/useStoredNumber';
-import { STORAGE_KEY_SIDE_PANEL_WIDTH } from '../infrastructure/config/storageKeys';
-import { netcattyBridge } from '../infrastructure/services/netcattyBridge';
+import { useStoredBoolean } from '../application/state/useStoredBoolean';
+import { useComposerBackend } from '../application/state/useComposerBackend';
+import { STORAGE_KEY_SIDE_PANEL_WIDTH, STORAGE_KEY_TERM_COMPOSE_BAR_OPEN, STORAGE_KEY_TERM_COMPOSE_BAR_DRAFT, STORAGE_KEY_TERM_COMPOSE_BAR_SEND_TARGET } from '../infrastructure/config/storageKeys';
 import { buildCacheKey } from '../application/state/sftp/sharedRemoteHostCache';
 import type { DropEntry } from '../lib/sftpFileUtils';
 import { GroupConfig, Host, Identity, KnownHost, SSHKey, Snippet, TerminalSession, TerminalTheme, Workspace, WorkspaceNode } from '../types';
@@ -42,6 +43,7 @@ import { SftpSidePanel } from './SftpSidePanel';
 import { ScriptsSidePanel } from './ScriptsSidePanel';
 import { ThemeSidePanel } from './terminal/ThemeSidePanel';
 import { AIChatSidePanel } from './AIChatSidePanel';
+import { TerminalComposeBar } from './terminal/TerminalComposeBar';
 import { useAIState } from '../application/state/useAIState';
 import { TERMINAL_THEMES } from '../infrastructure/config/terminalThemes';
 import { useCustomThemes } from '../application/state/customThemeStore';
@@ -592,6 +594,16 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
 
   // Terminal backend for broadcast writes
   const terminalBackend = useTerminalBackend();
+
+  // Integrated Compose Bar state (SecureCRT style)
+  const [isComposerOpen, setIsComposerOpen] = useStoredBoolean(STORAGE_KEY_TERM_COMPOSE_BAR_OPEN, false);
+  const [composerDraft, setComposerDraft] = useStoredString(STORAGE_KEY_TERM_COMPOSE_BAR_DRAFT, '');
+  const { saveActiveSessionContext } = useComposerBackend();
+  const [composerSendTarget, setComposerSendTarget] = useStoredString<'current-tab' | 'current-split' | 'all-sessions'>(
+    STORAGE_KEY_TERM_COMPOSE_BAR_SEND_TARGET, 
+    'current-split',
+    (v): v is 'current-tab' | 'current-split' | 'all-sessions' => v === 'current-tab' || v === 'current-split' || v === 'all-sessions'
+  );
   const snippetExecutorsRef = useRef<Map<string, SnippetExecutor>>(new Map());
 
   const handleSnippetExecutorChange = useCallback((sessionId: string, executor: SnippetExecutor | null) => {
@@ -601,6 +613,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     }
     snippetExecutorsRef.current.delete(sessionId);
   }, []);
+
 
   const onSessionData = terminalBackend.onSessionData;
 
@@ -626,6 +639,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
 
   const activeWorkspace = useMemo(() => workspaces.find(w => w.id === activeTabId), [workspaces, activeTabId]);
   const activeSession = useMemo(() => sessions.find(s => s.id === activeTabId), [sessions, activeTabId]);
+  const focusedSessionId = activeWorkspace?.focusedSessionId;
 
   // Handle broadcast input - write to all other sessions in the same workspace
   const handleBroadcastInput = useCallback((data: string, sourceSessionId: string) => {
@@ -642,10 +656,27 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     }
   }, [activeWorkspace, sessions, terminalBackend]);
 
-  // Workspace-level compose bar state (handled by main process singleton)
-  const handleToggleComposer = useCallback(() => {
-    netcattyBridge.get()?.toggleComposer();
-  }, []);
+  const handleComposerSend = useCallback((text: string) => {
+    if (!text) return;
+    const data = text.endsWith('\n') || text.endsWith('\r') ? text : text + '\n';
+    
+    let targetIds: string[] = [];
+    if (composerSendTarget === 'current-split') {
+        if (focusedSessionId) targetIds = [focusedSessionId];
+    } else if (composerSendTarget === 'current-tab') {
+        if (activeWorkspace) {
+            targetIds = collectSessionIds(activeWorkspace.root);
+        } else if (activeTabId) {
+            targetIds = [activeTabId];
+        }
+    } else if (composerSendTarget === 'all-sessions') {
+        targetIds = sessions.map(s => s.id);
+    }
+
+    targetIds.forEach(id => {
+        terminalBackend.writeToSession(id, data);
+    });
+  }, [composerSendTarget, focusedSessionId, activeWorkspace, activeTabId, sessions, terminalBackend]);
 
   // Update active session context to main process for global composer
   useEffect(() => {
@@ -678,9 +709,8 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
       };
     }
 
-    netcattyBridge.get()?.saveActiveSessionContext?.(context);
-  }, [activeSession, activeWorkspace, hosts, isBroadcastEnabled, sessions]);
-
+    saveActiveSessionContext(context);
+  }, [activeSession, activeWorkspace, hosts, isBroadcastEnabled, saveActiveSessionContext, sessions]);
   const activeTabIdRef = useRef(activeTabId);
   activeTabIdRef.current = activeTabId;
   const activeWorkspaceRef = useRef(activeWorkspace);
@@ -1254,7 +1284,6 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
 
   // Check if active workspace is in focus mode
   const isFocusMode = activeWorkspace?.viewMode === 'focus';
-  const focusedSessionId = activeWorkspace?.focusedSessionId;
 
   // Resolve the SFTP host for the current tab.
   // Uses the stored host from when the user opened SFTP, but updates when
@@ -1423,6 +1452,13 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     window.addEventListener('netcatty:toggle-ai-panel', handler);
     return () => window.removeEventListener('netcatty:toggle-ai-panel', handler);
   }, [handleOpenAI]);
+
+  // Listen for global Compose Bar toggle (from TopTabs button)
+  useEffect(() => {
+    const handler = () => setIsComposerOpen(prev => !prev);
+    window.addEventListener('netcatty:toggle-composer', handler);
+    return () => window.removeEventListener('netcatty:toggle-composer', handler);
+  }, [setIsComposerOpen]);
 
   useEffect(() => {
     const sessionIdsToClear = getSessionActivityIdsToClear(activeTabId, sessions);
@@ -2381,7 +2417,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                   onSplitVertical={onSplitSession ? splitVerticalHandler : undefined}
                   isBroadcastEnabled={inActiveWorkspace && activeWorkspace ? isBroadcastEnabled?.(activeWorkspace.id) : false}
                   onToggleBroadcast={inActiveWorkspace ? workspaceBroadcastHandler : undefined}
-                  onToggleComposeBar={handleToggleComposer}
+
                   onBroadcastInput={inActiveWorkspace && activeWorkspace && isBroadcastEnabled?.(activeWorkspace.id) ? handleBroadcastInput : undefined}
                   onSnippetExecutorChange={handleSnippetExecutorChange}
                   sessionLog={sessionLogConfig}
@@ -2442,7 +2478,35 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
             );
           })}
         </div>
+        
       </div>
+
+      
+      {isComposerOpen && (
+          <div 
+            className="border-t border-border/80 flex-shrink-0"
+            style={{
+              backgroundColor: terminalTheme.colors.background,
+            }}
+          >
+              <TerminalComposeBar
+                  value={composerDraft}
+                  onValueChange={setComposerDraft}
+                  sendTarget={composerSendTarget}
+                  onSendTargetChange={setComposerSendTarget}
+                  targetName={
+                    composerSendTarget === 'all-sessions' 
+                      ? undefined 
+                      : (composerSendTarget === 'current-tab' && activeWorkspace)
+                        ? activeWorkspace.title
+                        : (activeWorkspace?.focusedSessionId ? (sessionHostsMap.get(activeWorkspace.focusedSessionId)?.label ?? activeWorkspace.focusedSessionId) : (activeSession?.label ?? activeTabId))
+                  }
+                  onSend={handleComposerSend}
+                  onClose={() => setIsComposerOpen(false)}
+                  themeColors={terminalTheme.colors}
+              />
+          </div>
+      )}
     </div>
     </AIStateProvider>
   );

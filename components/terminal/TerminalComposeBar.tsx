@@ -1,10 +1,10 @@
 /**
  * Terminal Compose Bar
- * A modern text input bar for composing commands before sending them.
- * Supports pre-reviewing passwords/commands and broadcasting to multiple sessions.
+ * A high-fidelity "Command Window" inspired by SecureCRT.
+ * Features a header with target selection and a large multi-line input area.
  */
-import { Radio, Send, X } from 'lucide-react';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Radio, X, ChevronDown } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { cn } from '../../lib/utils';
 
@@ -24,6 +24,7 @@ export interface TerminalComposeBarProps {
     onValueChange?: (value: string) => void;
     sendTarget?: ComposeSendTarget;
     onSendTargetChange?: (target: ComposeSendTarget) => void;
+    targetName?: string;
 }
 
 export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
@@ -37,8 +38,28 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
     onValueChange,
     sendTarget = 'current-split',
     onSendTargetChange,
+    targetName: _targetName,
 }) => {
     const { t } = useI18n();
+
+    // Fallback translations
+    const getLabel = useCallback((key: string, fallback: string) => {
+        const val = t(key);
+        if (val === key || /^[A-Z._]+$/.test(val)) return fallback;
+        return val;
+    }, [t]);
+
+    const targetLabel = useMemo(() => {
+        switch (sendTarget) {
+            case 'current-tab': return getLabel("terminal.composeBar.sendTarget.currentTab", "Active Tab");
+            case 'current-split': return getLabel("terminal.composeBar.sendTarget.currentSplit", "Active Session");
+            case 'all-sessions': return getLabel("terminal.composeBar.sendTarget.allSessions", "All Sessions");
+            default: return sendTarget;
+        }
+    }, [sendTarget, getLabel]);
+
+
+
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const isComposingRef = useRef(false);
     const [internalValue, setInternalValue] = useState('');
@@ -46,7 +67,6 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
 
     // Auto-focus on mount
     useEffect(() => {
-        // Small delay to ensure the element is rendered
         const timer = setTimeout(() => textareaRef.current?.focus(), 50);
         return () => clearTimeout(timer);
     }, []);
@@ -59,32 +79,12 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
         setInternalValue(next);
     }, [onValueChange]);
 
-    // Auto-resize textarea
-    const resizeTextarea = useCallback(() => {
-        const el = textareaRef.current;
-        if (!el) return;
-        el.style.height = 'auto';
-        el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-    }, []);
-
-    useEffect(() => {
-        resizeTextarea();
-    }, [inputValue, resizeTextarea]);
-
-    const handleInput = useCallback((e: React.FormEvent<HTMLTextAreaElement>) => {
-        setComposeText(e.currentTarget.value);
-    }, [setComposeText]);
-
     const handleSend = useCallback(() => {
         const text = inputValue;
         if (!text) return;
         onSend(text);
         setComposeText('');
-        const el = textareaRef.current;
-        if (el) {
-            el.style.height = 'auto';
-            el.focus();
-        }
+        textareaRef.current?.focus();
     }, [inputValue, onSend, setComposeText]);
 
     const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -104,149 +104,90 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
 
     return (
         <div
-            className="flex-shrink-0"
+            className="flex-shrink-0 flex flex-col w-full text-xs font-sans select-none border-t border-border/40"
             style={{
-                background: `linear-gradient(to top, ${resolvedBg}, color-mix(in srgb, ${resolvedFg} 4%, ${resolvedBg} 96%))`,
-                borderTop: `1px solid color-mix(in srgb, ${resolvedFg} 10%, ${resolvedBg} 90%)`,
-                borderRadius: '0 0 8px 8px',
-                padding: '6px 10px',
+                backgroundColor: resolvedBg,
+                color: resolvedFg,
             }}
         >
-            <div className="flex items-center gap-2">
-                {showBroadcastToggle ? (
-                    <button
-                        type="button"
-                        className="h-7 w-7 flex items-center justify-center rounded-md transition-colors duration-150"
-                        style={{
-                            color: isBroadcastEnabled
-                                ? '#fbbf24'
-                                : `color-mix(in srgb, ${resolvedFg} 60%, ${resolvedBg} 40%)`,
-                            background: `color-mix(in srgb, ${resolvedFg} 12%, ${resolvedBg} 88%)`,
-                        }}
-                        onMouseEnter={(e) => {
-                            e.currentTarget.style.background = `color-mix(in srgb, ${resolvedFg} 22%, ${resolvedBg} 78%)`;
-                            if (!isBroadcastEnabled) e.currentTarget.style.color = resolvedFg;
-                        }}
-                        onMouseLeave={(e) => {
-                            e.currentTarget.style.background = `color-mix(in srgb, ${resolvedFg} 12%, ${resolvedBg} 88%)`;
-                            e.currentTarget.style.color = isBroadcastEnabled
-                                ? '#fbbf24'
-                                : `color-mix(in srgb, ${resolvedFg} 60%, ${resolvedBg} 40%)`;
-                        }}
-                        onClick={onToggleBroadcast}
-                        title={
-                            isBroadcastEnabled
-                                ? t("terminal.toolbar.broadcastDisable")
-                                : t("terminal.toolbar.broadcastEnable")
-                        }
-                        aria-label={
-                            isBroadcastEnabled
-                                ? t("terminal.toolbar.broadcastDisable")
-                                : t("terminal.toolbar.broadcastEnable")
-                        }
-                        aria-pressed={isBroadcastEnabled}
-                    >
-                        <Radio size={13} className={cn(isBroadcastEnabled && "animate-pulse")} />
-                    </button>
-                ) : isBroadcastEnabled ? (
-                    <div
-                        className="flex items-center"
-                        title={t("terminal.composeBar.broadcasting")}
-                    >
-                        <Radio size={14} className="text-amber-400 animate-pulse" />
+            {/* SecureCRT Header Bar */}
+            <div 
+                className="flex items-center h-8 px-2 gap-2 border-b border-border/20"
+                style={{
+                    backgroundColor: `color-mix(in srgb, ${resolvedFg} 5%, transparent)`,
+                }}
+            >
+                {/* Target Dropdown Selector */}
+                {onSendTargetChange && (
+                    <div className="relative flex items-center group">
+                        <select
+                            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                            value={sendTarget}
+                            onChange={(e) => onSendTargetChange(e.target.value as ComposeSendTarget)}
+                        >
+                            <option value="current-split">{getLabel("terminal.composeBar.sendTarget.currentSplit", "Active Session")}</option>
+                            <option value="current-tab">{getLabel("terminal.composeBar.sendTarget.currentTab", "Active Tab")}</option>
+                            <option value="all-sessions">{getLabel("terminal.composeBar.sendTarget.allSessions", "All Sessions")}</option>
+                        </select>
+                        <div className="h-6 px-1.5 flex items-center gap-1.5 rounded hover:bg-white/5 transition-colors border border-border/20 bg-black/20">
+                            <span className="text-[11px] font-medium opacity-80">{targetLabel}</span>
+                            <ChevronDown size={12} className="opacity-50" />
+                        </div>
                     </div>
-                ) : null}
+                )}
 
-                {/* Input field */}
+                <div className="w-px h-3 bg-border/40 mx-1" />
+
+                <div className="flex-1" />
+
+                {/* Right side controls */}
+                <div className="flex items-center gap-1">
+                    {showBroadcastToggle && (
+                        <button
+                            onClick={onToggleBroadcast}
+                            className={cn(
+                                "h-6 px-2 flex items-center gap-1.5 rounded transition-all",
+                                isBroadcastEnabled ? "bg-amber-500/10 text-amber-500" : "hover:bg-white/5 opacity-60"
+                            )}
+                        >
+                            <Radio size={12} className={cn(isBroadcastEnabled && "animate-pulse")} />
+                            <span className="text-[10px] font-bold uppercase tracking-wider">Broadcast</span>
+                        </button>
+                    )}
+
+                    <button
+                        onClick={onClose}
+                        className="h-6 w-6 flex items-center justify-center rounded hover:bg-destructive/10 hover:text-destructive transition-all opacity-50"
+                        title={getLabel("terminal.composeBar.close", "Close")}
+                    >
+                        <X size={14} />
+                    </button>
+                </div>
+            </div>
+
+            {/* Input Area */}
+            <div className="relative w-full p-2">
                 <textarea
                     ref={textareaRef}
                     className={cn(
-                        "flex-1 min-w-0 resize-none rounded-md px-3 py-1.5 text-xs font-mono leading-relaxed",
-                        "outline-none transition-all duration-200",
-                        "placeholder:opacity-40",
+                        "w-full resize-none bg-transparent text-[13px] font-mono leading-relaxed",
+                        "outline-none transition-all duration-200 block",
+                        "placeholder:opacity-20",
                     )}
                     style={{
-                        backgroundColor: `color-mix(in srgb, ${resolvedFg} 6%, ${resolvedBg} 94%)`,
                         color: resolvedFg,
-                        border: `1px solid color-mix(in srgb, ${resolvedFg} 25%, ${resolvedBg} 75%)`,
-                        minHeight: '28px',
-                        maxHeight: '120px',
-                        boxShadow: `inset 0 1px 3px color-mix(in srgb, ${resolvedBg} 80%, transparent)`,
+                        minHeight: '60px',
+                        maxHeight: '200px',
                     }}
-                    rows={1}
                     value={inputValue}
-                    placeholder={t("terminal.composeBar.placeholder")}
-                    onInput={handleInput}
+                    placeholder={getLabel("terminal.composeBar.placeholder", "Enter commands to send to session...")}
+                    onInput={(e) => setComposeText(e.currentTarget.value)}
                     onKeyDown={handleKeyDown}
-                    onFocus={(e) => {
-                        e.currentTarget.style.borderColor = `color-mix(in srgb, ${resolvedFg} 40%, ${resolvedBg} 60%)`;
-                        e.currentTarget.style.boxShadow = `inset 0 1px 3px color-mix(in srgb, ${resolvedBg} 80%, transparent), 0 0 0 1px color-mix(in srgb, ${resolvedFg} 8%, transparent)`;
-                    }}
-                    onBlur={(e) => {
-                        e.currentTarget.style.borderColor = `color-mix(in srgb, ${resolvedFg} 25%, ${resolvedBg} 75%)`;
-                        e.currentTarget.style.boxShadow = `inset 0 1px 3px color-mix(in srgb, ${resolvedBg} 80%, transparent)`;
-                    }}
                     onCompositionStart={() => { isComposingRef.current = true; }}
                     onCompositionEnd={() => { isComposingRef.current = false; }}
                 />
-                {onSendTargetChange && (
-                    <select
-                        className="h-7 rounded-md px-2 text-[11px] font-medium outline-none"
-                        style={{
-                            backgroundColor: `color-mix(in srgb, ${resolvedFg} 10%, ${resolvedBg} 90%)`,
-                            color: resolvedFg,
-                            border: `1px solid color-mix(in srgb, ${resolvedFg} 25%, ${resolvedBg} 75%)`,
-                        }}
-                        value={sendTarget}
-                        onChange={(e) => onSendTargetChange(e.target.value as ComposeSendTarget)}
-                        title={t("terminal.composeBar.sendTarget")}
-                        aria-label={t("terminal.composeBar.sendTarget")}
-                    >
-                        <option value="current-tab">{t("terminal.composeBar.sendTarget.currentTab")}</option>
-                        <option value="current-split">{t("terminal.composeBar.sendTarget.currentSplit")}</option>
-                        <option value="all-sessions">{t("terminal.composeBar.sendTarget.allSessions")}</option>
-                    </select>
-                )}
-
-                {/* Action buttons */}
-                <div className="flex items-center gap-0.5">
-                    <button
-                        className="h-7 w-7 flex items-center justify-center rounded-md transition-colors duration-150"
-                        style={{
-                            color: resolvedFg,
-                            background: `color-mix(in srgb, ${resolvedFg} 20%, ${resolvedBg} 80%)`,
-                        }}
-                        onMouseEnter={(e) => {
-                            e.currentTarget.style.background = `color-mix(in srgb, ${resolvedFg} 30%, ${resolvedBg} 70%)`;
-                        }}
-                        onMouseLeave={(e) => {
-                            e.currentTarget.style.background = `color-mix(in srgb, ${resolvedFg} 20%, ${resolvedBg} 80%)`;
-                        }}
-                        onClick={handleSend}
-                        title={t("terminal.composeBar.send")}
-                    >
-                        <Send size={13} />
-                    </button>
-                    <button
-                        className="h-7 w-7 flex items-center justify-center rounded-md transition-colors duration-150"
-                        style={{
-                            color: `color-mix(in srgb, ${resolvedFg} 60%, ${resolvedBg} 40%)`,
-                            background: `color-mix(in srgb, ${resolvedFg} 12%, ${resolvedBg} 88%)`,
-                        }}
-                        onMouseEnter={(e) => {
-                            e.currentTarget.style.background = `color-mix(in srgb, ${resolvedFg} 22%, ${resolvedBg} 78%)`;
-                            e.currentTarget.style.color = resolvedFg;
-                        }}
-                        onMouseLeave={(e) => {
-                            e.currentTarget.style.background = `color-mix(in srgb, ${resolvedFg} 12%, ${resolvedBg} 88%)`;
-                            e.currentTarget.style.color = `color-mix(in srgb, ${resolvedFg} 60%, ${resolvedBg} 40%)`;
-                        }}
-                        onClick={onClose}
-                        title={t("terminal.composeBar.close")}
-                    >
-                        <X size={13} />
-                    </button>
-                </div>
+                
+                {/* Visual Cue: Bottom right send button hint or similar could be added here */}
             </div>
         </div>
     );

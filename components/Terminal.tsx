@@ -159,7 +159,7 @@ interface TerminalProps {
   onOpenTheme?: () => void;
   isBroadcastEnabled?: boolean;
   onToggleBroadcast?: () => void;
-  onToggleComposeBar?: () => void;
+
   onBroadcastInput?: (data: string, sourceSessionId: string) => void;
   onSnippetExecutorChange?: (
     sessionId: string,
@@ -223,7 +223,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   onOpenTheme,
   isBroadcastEnabled,
   onToggleBroadcast,
-  onToggleComposeBar,
+
   onBroadcastInput,
   onSnippetExecutorChange,
   sessionLog,
@@ -659,7 +659,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       if (hostTheme) return hostTheme;
     }
     return terminalTheme;
-  }, [customThemes, followAppTerminalTheme, host.theme, host.themeOverride, terminalTheme, themePreviewId]);
+  }, [customThemes, followAppTerminalTheme, host, terminalTheme, themePreviewId]);
 
   const resolvedChainHosts =
     chainHosts;
@@ -1635,7 +1635,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       onClose={() => onCloseSession?.(sessionId)}
       isSearchOpen={isSearchOpen}
       onToggleSearch={handleToggleSearch}
-      onToggleComposeBar={onToggleComposeBar}
+
       terminalEncoding={terminalEncoding}
       onSetTerminalEncoding={handleSetTerminalEncoding}
     />

@@ -2,7 +2,7 @@
  * Terminal Toolbar
  * Displays SFTP, Scripts, Theme, Highlight, Search buttons and close button in terminal status bar
  */
-import { Check, FolderInput, Languages, X, Zap, Palette, Search, TextCursorInput } from 'lucide-react';
+import { Check, FolderInput, Languages, X, Zap, Palette, Search } from 'lucide-react';
 import React, { useState } from 'react';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { Host } from '../../types';
@@ -24,8 +24,7 @@ export interface TerminalToolbarProps {
     // Search functionality
     isSearchOpen?: boolean;
     onToggleSearch?: () => void;
-    // Compose bar
-    onToggleComposeBar?: () => void;
+
     // Terminal encoding
     terminalEncoding?: 'utf-8' | 'gb18030';
     onSetTerminalEncoding?: (encoding: 'utf-8' | 'gb18030') => void;
@@ -42,7 +41,7 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
     onClose,
     isSearchOpen,
     onToggleSearch,
-    onToggleComposeBar,
+
     terminalEncoding,
     onSetTerminalEncoding,
 }) => {
@@ -157,20 +156,7 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
                 buttonClassName={buttonBase}
             />
 
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <Button
-                        variant="secondary"
-                        size="icon"
-                        className={buttonBase}
-                        aria-label={t("terminal.toolbar.composeBar")}
-                        onClick={onToggleComposeBar}
-                    >
-                        <TextCursorInput size={12} />
-                    </Button>
-                </TooltipTrigger>
-                <TooltipContent>{t("terminal.toolbar.composeBar")}</TooltipContent>
-            </Tooltip>
+
 
             <Tooltip>
                 <TooltipTrigger asChild>

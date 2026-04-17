@@ -1,4 +1,4 @@
-import { Bell, Copy, FileText, Folder, FolderLock, LayoutGrid, Minus, Moon, MoreHorizontal, Plus, Server, Sparkles, Square, Sun, TerminalSquare, Usb, X } from 'lucide-react';
+import { Bell, Copy, FileText, Folder, FolderLock, LayoutGrid, Minus, Moon, MoreHorizontal, Plus, Server, Sparkles, Square, Sun, TerminalSquare, TextCursorInput, Usb, X } from 'lucide-react';
 import React, { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { activeTabStore, useActiveTabId } from '../application/state/activeTabStore';
 import { buildWorkspaceActivityMap } from '../application/state/sessionActivity';
@@ -955,6 +955,16 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
             onClick={() => window.dispatchEvent(new CustomEvent('netcatty:toggle-ai-panel'))}
           >
             <Sparkles size={16} />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 app-no-drag"
+            style={{ color: 'var(--top-tabs-muted, hsl(var(--muted-foreground)))' }}
+            title={t("terminal.toolbar.composeBar")}
+            onClick={() => window.dispatchEvent(new CustomEvent('netcatty:toggle-composer'))}
+          >
+            <TextCursorInput size={16} />
           </Button>
           <Button variant="ghost" size="icon" className="h-6 w-6 app-no-drag" style={{ color: 'var(--top-tabs-muted, hsl(var(--muted-foreground)))' }}>
             <Bell size={16} />

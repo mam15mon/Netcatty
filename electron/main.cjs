@@ -217,6 +217,20 @@ const preload = path.join(__dirname, "preload.cjs");
 const isMac = process.platform === "darwin";
 const appIcon = path.join(__dirname, "../public/icon.png");
 const electronDir = __dirname;
+const allowMultiInstanceInDev =
+  isDev && process.env.NETCATTY_DEV_ALLOW_MULTI_INSTANCE === "1";
+
+if (allowMultiInstanceInDev) {
+  try {
+    // Use an isolated profile for dev Electron so it won't fight with a
+    // packaged Netcatty instance (tray/auto-start) over Chromium cache files.
+    const devUserDataPath = path.join(app.getPath("appData"), "netcatty-dev");
+    app.setPath("userData", devUserDataPath);
+    app.setPath("sessionData", path.join(devUserDataPath, "session-data"));
+  } catch (err) {
+    console.warn("[Main] Failed to set dev profile paths:", err);
+  }
+}
 
 const APP_PROTOCOL_HEADERS = {
   // Required for crossOriginIsolated / SharedArrayBuffer.
@@ -1120,7 +1134,12 @@ function showStartupError(err) {
 // Ensure single-instance behavior — must run before app.whenReady() so
 // the second instance never attempts to register the app:// protocol or
 // create a BrowserWindow (which would fail with ERR_FAILED).
-const gotLock = app.requestSingleInstanceLock();
+//
+// Dev-only override:
+// When a packaged Netcatty is already running (often hidden in tray),
+// `npm run dev` would exit immediately because it cannot acquire the lock.
+// Allow opting out of the lock in dev so local Electron + Vite can still run.
+const gotLock = allowMultiInstanceInDev ? true : app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {

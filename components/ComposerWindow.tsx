@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../application/i18n/I18nProvider';
 import { useStoredSyncedString } from '../application/state/useStoredSyncedString';
+import { useComposerBackend } from '../application/state/useComposerBackend';
 import {
   STORAGE_KEY_TERM_COMPOSE_BAR_DRAFT,
   STORAGE_KEY_TERM_COMPOSE_BAR_SEND_TARGET,
 } from '../infrastructure/config/storageKeys';
-import { netcattyBridge } from '../infrastructure/services/netcattyBridge';
 import { useSettingsState } from '../application/state/useSettingsState';
 import { TerminalComposeBar } from './terminal/TerminalComposeBar';
 
@@ -23,7 +23,7 @@ type ComposerActiveContext = {
 export const ComposerWindow: React.FC = () => {
   const { t } = useI18n();
   const { currentTerminalTheme } = useSettingsState();
-  const bridge = netcattyBridge.get();
+  const { queryActiveSessionContext, sendComposerData, toggleComposer } = useComposerBackend();
 
   const [draft, setDraft] = useStoredSyncedString(STORAGE_KEY_TERM_COMPOSE_BAR_DRAFT, '');
   const [sendTarget, setSendTarget] = useStoredSyncedString<ComposeSendTarget>(
@@ -35,9 +35,9 @@ export const ComposerWindow: React.FC = () => {
   const [activeContext, setActiveContext] = useState<ComposerActiveContext | null>(null);
 
   const refreshContext = useCallback(async () => {
-    const context = await bridge?.queryActiveSessionContext?.();
+    const context = await queryActiveSessionContext();
     setActiveContext(context ?? null);
-  }, [bridge]);
+  }, [queryActiveSessionContext]);
 
   useEffect(() => {
     void refreshContext();
@@ -47,13 +47,13 @@ export const ComposerWindow: React.FC = () => {
 
   const handleSend = useCallback((text: string) => {
     if (!text.trim()) return;
-    bridge?.sendComposerData?.({ text, sendTarget });
+    sendComposerData({ text, sendTarget });
     setDraft('');
-  }, [bridge, sendTarget, setDraft]);
+  }, [sendComposerData, sendTarget, setDraft]);
 
   const handleClose = useCallback(() => {
-    void bridge?.toggleComposer?.();
-  }, [bridge]);
+    void toggleComposer();
+  }, [toggleComposer]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
