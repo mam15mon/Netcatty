@@ -1750,6 +1750,26 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     });
   }, [focusedHost, focusedFontSize, isFocusedHostEphemeral, onUpdateTerminalFontSize, onUpdateHost]);
 
+  const handleFontSizeChangeForSession = useCallback((targetSessionId: string, nextFontSize: number) => {
+    const targetHost = sessionHostsMapRef.current.get(targetSessionId);
+    if (!targetHost) return;
+
+    const currentSize = resolveHostTerminalFontSize(targetHost, fontSize);
+    if (nextFontSize === currentSize) return;
+
+    startTransition(() => {
+      const isEphemeralHost = !hostMap.has(targetHost.id);
+      if (isEphemeralHost) {
+        onUpdateTerminalFontSize?.(nextFontSize);
+        return;
+      }
+
+      const rawHost = hostMap.get(targetHost.id);
+      if (!rawHost) return;
+      onUpdateHost({ ...rawHost, fontSize: nextFontSize, fontSizeOverride: true });
+    });
+  }, [fontSize, hostMap, onUpdateHost, onUpdateTerminalFontSize]);
+
   const handleFontSizeResetForFocusedSession = useCallback(() => {
     if (!focusedHost || isFocusedHostEphemeral) return;
     onUpdateHost(clearHostFontSizeOverride(focusedHost));
@@ -2422,6 +2442,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                   onSnippetExecutorChange={handleSnippetExecutorChange}
                   sessionLog={sessionLogConfig}
                   autoSessionLogEnabled={!!sessionLogsEnabled}
+                  onAdjustTerminalFontSize={handleFontSizeChangeForSession}
                 />
               </div>
             );

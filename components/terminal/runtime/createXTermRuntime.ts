@@ -114,6 +114,8 @@ export type CreateXTermRuntimeContext = {
   onAutocompleteKeyEvent?: (e: KeyboardEvent) => boolean;
   // Autocomplete input handler — called on every character input
   onAutocompleteInput?: (data: string) => void;
+  // True while programmatically restoring selection
+  isRestoringSelectionRef?: RefObject<boolean>;
 };
 
 const detectPlatform = (): XTermPlatform => {
@@ -419,6 +421,31 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
       return true;
     }
 
+    if (
+      ctx.terminalSettingsRef.current?.preserveSelectionOnInput &&
+      term.hasSelection()
+    ) {
+      const selection = term.getSelectionPosition();
+      if (selection) {
+        const length =
+          (selection.end.y - selection.start.y) * term.cols +
+          (selection.end.x - selection.start.x);
+        const startX = selection.start.x;
+        const startY = selection.start.y;
+        queueMicrotask(() => {
+          if (term.hasSelection()) return;
+          if (startY >= term.buffer.active.length) return;
+          const restoreFlag = ctx.isRestoringSelectionRef;
+          if (restoreFlag) restoreFlag.current = true;
+          try {
+            term.select(startX, startY, length);
+          } finally {
+            if (restoreFlag) restoreFlag.current = false;
+          }
+        });
+      }
+    }
+
     // Autocomplete key handler (must be checked before other handlers)
     if (ctx.onAutocompleteKeyEvent) {
       const consumed = ctx.onAutocompleteKeyEvent(e);
@@ -664,7 +691,8 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
     if (!isEraseScrollbackSequence(params)) {
       return false;
     }
-    return true;
+    const wipeAllowed = ctx.terminalSettingsRef.current?.clearWipesScrollback ?? true;
+    return !wipeAllowed;
   });
 
   // Register OSC 7 handler using xterm.js parser

@@ -797,6 +797,7 @@ declare global {
       sessionId: string;
       sessionName?: string;
       preferredDirectory?: string;
+      initialLine?: string;
     }): Promise<{ success: boolean; started: boolean; canceled?: boolean; filePath?: string; error?: string }>;
     stopManualSessionLog?(payload: {
       sessionId: string;

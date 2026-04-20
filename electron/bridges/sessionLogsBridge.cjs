@@ -306,7 +306,7 @@ async function openSessionLogsDir(event, payload) {
  */
 async function startManualSessionLog(event, payload = {}) {
   const sessionLogStreamManager = require("./sessionLogStreamManager.cjs");
-  const { sessionId, sessionName, preferredDirectory } = payload;
+  const { sessionId, sessionName, preferredDirectory, initialLine } = payload;
   if (!sessionId) {
     return { success: false, started: false, error: "Missing sessionId" };
   }
@@ -350,6 +350,7 @@ async function startManualSessionLog(event, payload = {}) {
       format: "raw",
       hostLabel: safeSessionName,
       startTime: Date.now(),
+      initialLine: typeof initialLine === "string" ? initialLine : "",
     });
 
     if (!startResult.ok) {

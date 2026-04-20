@@ -51,6 +51,7 @@ import { createXTermRuntime, primaryFontFamily, type XTermRuntime } from "./term
 import { shouldPreserveTerminalFocusOnMouseDown } from "./terminal/toolbarFocus";
 import { preserveTerminalViewportInScrollback } from "./terminal/clearTerminalViewport";
 import { XTERM_PERFORMANCE_CONFIG } from "../infrastructure/config/xtermPerformance";
+import { MAX_FONT_SIZE, MIN_FONT_SIZE } from "../infrastructure/config/fonts";
 import { useTerminalSearch } from "./terminal/hooks/useTerminalSearch";
 import { useTerminalContextActions } from "./terminal/hooks/useTerminalContextActions";
 import { useTerminalAuthState } from "./terminal/hooks/useTerminalAuthState";
@@ -168,6 +169,7 @@ interface TerminalProps {
   // Session log configuration for real-time streaming
   sessionLog?: { enabled: boolean; directory: string; format: string };
   autoSessionLogEnabled?: boolean;
+  onAdjustTerminalFontSize?: (sessionId: string, nextFontSize: number) => void;
 }
 
 // Helper function to format network speed (bytes/sec) to human-readable format
@@ -229,11 +231,13 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   onSnippetExecutorChange,
   sessionLog,
   autoSessionLogEnabled = false,
+  onAdjustTerminalFontSize,
 }) => {
   // Timeout for connection - increased to 120s to allow time for keyboard-interactive (2FA) authentication
   const CONNECTION_TIMEOUT = 120000;
   const { t } = useI18n();
   const availableFonts = useAvailableFonts();
+  const terminalRootRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -257,6 +261,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   const [hasMouseTracking, setHasMouseTracking] = useState(false);
   const mouseTrackingRef = useRef(false);
   const serialLineBufferRef = useRef<string>("");
+  const isRestoringSelectionRef = useRef(false);
 
   const terminalSettingsRef = useRef(terminalSettings);
   terminalSettingsRef.current = terminalSettings;
@@ -676,6 +681,66 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     return (availableFonts.find((f) => f.id === resolvedFontId) || availableFonts[0]).family;
   }, [availableFonts, fontFamilyId, hasFontFamilyOverride, host.fontFamily]);
 
+  const WHEEL_ZOOM_FLUSH_DELAY_MS = 48;
+  const wheelZoomPendingStepsRef = useRef(0);
+  const wheelZoomTimerRef = useRef<number | null>(null);
+  const wheelZoomSizeRef = useRef(effectiveFontSize);
+
+  useEffect(() => {
+    wheelZoomSizeRef.current = effectiveFontSize;
+  }, [effectiveFontSize]);
+
+  const flushTerminalWheelZoom = useCallback(() => {
+    const pendingSteps = wheelZoomPendingStepsRef.current;
+    wheelZoomPendingStepsRef.current = 0;
+
+    if (!pendingSteps || !onAdjustTerminalFontSize) return;
+
+    const baseSize = wheelZoomSizeRef.current;
+    const nextFontSize = Math.max(
+      MIN_FONT_SIZE,
+      Math.min(MAX_FONT_SIZE, baseSize + pendingSteps),
+    );
+    if (nextFontSize === baseSize) return;
+
+    wheelZoomSizeRef.current = nextFontSize;
+    onAdjustTerminalFontSize(sessionId, nextFontSize);
+  }, [onAdjustTerminalFontSize, sessionId]);
+
+  const handleTerminalWheel = useCallback((e: WheelEvent) => {
+    if (!onAdjustTerminalFontSize) return;
+    if (!(e.ctrlKey || e.metaKey)) return;
+    if (e.deltaY === 0) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    wheelZoomPendingStepsRef.current += e.deltaY < 0 ? 1 : -1;
+
+    if (wheelZoomTimerRef.current !== null) return;
+
+    wheelZoomTimerRef.current = window.setTimeout(() => {
+      wheelZoomTimerRef.current = null;
+      flushTerminalWheelZoom();
+    }, WHEEL_ZOOM_FLUSH_DELAY_MS);
+  }, [flushTerminalWheelZoom, onAdjustTerminalFontSize]);
+
+  useEffect(() => {
+    const root = terminalRootRef.current;
+    if (!root) return;
+
+    root.addEventListener("wheel", handleTerminalWheel, { passive: false });
+
+    return () => {
+      root.removeEventListener("wheel", handleTerminalWheel);
+      if (wheelZoomTimerRef.current !== null) {
+        window.clearTimeout(wheelZoomTimerRef.current);
+        wheelZoomTimerRef.current = null;
+      }
+      wheelZoomPendingStepsRef.current = 0;
+    };
+  }, [handleTerminalWheel]);
+
   const effectiveTheme = useMemo(() => {
     // When "Follow Application Theme" is on and there's no active
     // preview, skip per-host overrides — all terminals should use the
@@ -828,6 +893,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
           // Autocomplete integration
           onAutocompleteKeyEvent: (e: KeyboardEvent) => autocompleteKeyEventRef.current?.(e) ?? true,
           onAutocompleteInput: (data: string) => autocompleteInputRef.current?.(data),
+          isRestoringSelectionRef,
         });
 
         xtermRuntimeRef.current = runtime;
@@ -1265,7 +1331,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       const hasText = !!selection && selection.length > 0;
       setHasSelection(hasText);
 
-      if (hasText && terminalSettings?.copyOnSelect) {
+      if (hasText && terminalSettings?.copyOnSelect && !isRestoringSelectionRef.current) {
         navigator.clipboard.writeText(selection).catch((err) => {
           logger.warn("Copy on select failed:", err);
         });
@@ -1457,10 +1523,27 @@ const TerminalComponent: React.FC<TerminalProps> = ({
         return;
       }
 
+      let initialLine = "";
+      try {
+        const term = termRef.current;
+        if (term) {
+          const activeBuffer = term.buffer.active;
+          const cursorY = activeBuffer.cursorY;
+          const cursorX = activeBuffer.cursorX;
+          const line = activeBuffer.getLine(cursorY);
+          if (line) {
+            initialLine = line.translateToString(false, 0, cursorX);
+          }
+        }
+      } catch (err) {
+        logger.warn("[Terminal] Failed to capture current prompt line:", err);
+      }
+
       const startResult = await startManualSessionLog({
         sessionId,
         sessionName: host.label || host.hostname || sessionId,
         preferredDirectory: sessionLog?.directory,
+        initialLine,
       });
 
       if (startResult?.canceled) {
@@ -1750,6 +1833,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       onClose={inWorkspace ? () => onCloseSession?.(sessionId) : undefined}
     >
       <div
+        ref={terminalRootRef}
         className="relative h-full w-full flex overflow-hidden bg-gradient-to-br from-[#050910] via-[#06101a] to-[#0b1220]"
         style={terminalPreviewVars}
         onDragEnter={handleDragEnter}

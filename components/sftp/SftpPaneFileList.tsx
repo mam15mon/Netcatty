@@ -88,7 +88,7 @@ const SftpErrorWithLogs: React.FC<{
             onClick={() => setShowLogs(!showLogs)}
           >
             <ChevronDown size={14} className={`mr-1 transition-transform ${showLogs ? 'rotate-180' : ''}`} />
-            {showLogs ? "Hide logs" : "Show logs"}
+            {showLogs ? t("sftp.logs.hide") : t("sftp.logs.show")}
           </Button>
         )}
       </div>
@@ -208,6 +208,7 @@ export const SftpPaneFileList: React.FC<SftpPaneFileListProps> = React.memo(({
             onDragOver={handleEntryDragOver}
             onDragLeave={handleRowDragLeave}
             onDrop={handleEntryDrop}
+            t={t}
           />
         </ContextMenuTrigger>
         {entry.name !== ".." && (

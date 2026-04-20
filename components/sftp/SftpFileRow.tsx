@@ -22,6 +22,7 @@ interface SftpFileRowProps {
     onDragOver: (entry: SftpFileEntry, e: React.DragEvent) => void;
     onDragLeave: () => void;
     onDrop: (entry: SftpFileEntry, e: React.DragEvent) => void;
+    t: (key: string, params?: Record<string, unknown>) => string;
 }
 
 const SftpFileRowInner: React.FC<SftpFileRowProps> = ({
@@ -38,6 +39,7 @@ const SftpFileRowInner: React.FC<SftpFileRowProps> = ({
     onDragOver,
     onDragLeave,
     onDrop,
+    t,
 }) => {
     const isParentDir = entry.name === '..';
     // A symlink pointing to a directory behaves like a directory (navigable, accepts drops)
@@ -106,8 +108,7 @@ const SftpFileRowInner: React.FC<SftpFileRowProps> = ({
                         />
                     )}
                 </div>
-                <span
-                    className={cn(
+                    <span className={cn(
                         "truncate",
                         entry.type === 'symlink' && "italic pr-1",
                         isSelectionVisible && "font-medium",
@@ -115,7 +116,7 @@ const SftpFileRowInner: React.FC<SftpFileRowProps> = ({
                     title={entry.name}
                 >
                     {entry.name}
-                    {entry.type === 'symlink' && <span className="sr-only"> (symbolic link)</span>}
+                    {entry.type === 'symlink' && <span className="sr-only">{t('sftp.sr.symlink')}</span>}
                 </span>
             </div>
             <span className={cn("text-xs truncate", isSelectionVisible ? "text-accent-foreground/85" : "text-muted-foreground")}>{modifiedLabel}</span>
@@ -123,7 +124,7 @@ const SftpFileRowInner: React.FC<SftpFileRowProps> = ({
                 {isNavDir ? '--' : sizeLabel}
             </span>
             <span className={cn("text-xs truncate capitalize text-right", isSelectionVisible ? "text-accent-foreground/85" : "text-muted-foreground")}>
-                {isSymlinkToDirectory ? 'link → folder' : entry.type === 'directory' ? 'folder' : entry.type === 'symlink' ? 'link' : entry.name.split('.').pop()?.toLowerCase() || 'file'}
+                {isSymlinkToDirectory ? t('sftp.kind.linkToFolder') : entry.type === 'directory' ? t('sftp.kind.folder') : entry.type === 'symlink' ? t('sftp.kind.link') : (entry.name.split('.').pop()?.toLowerCase() || t('sftp.kind.file'))}
             </span>
         </div>
     );

@@ -627,7 +627,7 @@ const QuickConnectWizard: React.FC<QuickConnectWizardProps> = ({
                 className="h-8 text-xs"
                 onClick={() => setShowLogs(!showLogs)}
               >
-                {showLogs ? "Hide logs" : "Show logs"}
+                {showLogs ? t("sftp.logs.hide") : t("sftp.logs.show")}
               </Button>
             )}
           </div>
