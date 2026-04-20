@@ -2441,7 +2441,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                   onBroadcastInput={inActiveWorkspace && activeWorkspace && isBroadcastEnabled?.(activeWorkspace.id) ? handleBroadcastInput : undefined}
                   onSnippetExecutorChange={handleSnippetExecutorChange}
                   sessionLog={sessionLogConfig}
-                  autoSessionLogEnabled={!!sessionLogsEnabled}
+                  autoSessionLogEnabled={!!sessionLogConfig?.enabled}
                   onAdjustTerminalFontSize={handleFontSizeChangeForSession}
                 />
               </div>

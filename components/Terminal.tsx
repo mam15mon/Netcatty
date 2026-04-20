@@ -1514,13 +1514,18 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     try {
       if (isManualSessionLogging) {
         const stopResult = await stopManualSessionLog({ sessionId });
-        if (stopResult?.success && stopResult.stopped) {
+        if (stopResult?.success) {
           setIsManualSessionLogging(false);
-          toast.success(t("terminal.toolbar.sessionLogStopped"));
-        } else if (!stopResult?.success) {
+          if (stopResult.stopped) {
+            toast.success(t("terminal.toolbar.sessionLogStopped"));
+          } else {
+            logger.warn("[Terminal] Manual session log stop returned success but no active stream:", { sessionId });
+          }
+          return;
+        } else {
           toast.error(stopResult?.error || t("terminal.toolbar.sessionLogFailed"));
+          return;
         }
-        return;
       }
 
       let initialLine = "";
@@ -1533,6 +1538,18 @@ const TerminalComponent: React.FC<TerminalProps> = ({
           const line = activeBuffer.getLine(cursorY);
           if (line) {
             initialLine = line.translateToString(false, 0, cursorX);
+          }
+          if (!initialLine) {
+            const currentFull = line?.translateToString(true) || "";
+            if (currentFull) {
+              initialLine = currentFull;
+            } else if (cursorY > 0) {
+              const prevLine = activeBuffer.getLine(cursorY - 1);
+              const prevText = prevLine?.translateToString(true) || "";
+              if (prevText) {
+                initialLine = prevText;
+              }
+            }
           }
         }
       } catch (err) {
@@ -1785,7 +1802,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       onOpenSFTP={handleOpenSFTP}
       onOpenScripts={onOpenScripts ?? (() => {})}
       onOpenTheme={onOpenTheme ?? (() => {})}
-      showLogButton={!inWorkspace}
+      showLogButton={true}
       onToggleSessionLog={handleToggleSessionLog}
       isSessionLogging={isManualSessionLogging}
       isSessionLogDisabled={autoSessionLogEnabled}

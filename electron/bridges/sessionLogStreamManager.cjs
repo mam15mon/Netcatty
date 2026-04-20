@@ -71,7 +71,10 @@ function createEntry(sessionId, opts) {
     discardPartialLineOnStop,
     sanitizeControlSequences,
     currentLine: lineBuffered ? String(initialLine || "") : "",
+    currentLineCursor: lineBuffered ? String(initialLine || "").length : 0,
+    pendingEscape: "",
     pendingCarriageReturn: false,
+    skipNextLFAfterCRLF: false,
     buffer: "",
     flushTimer: null,
     disabled: false,
@@ -138,9 +141,10 @@ function startStreamToFile(sessionId, opts) {
       hostLabel: hostLabel || "unknown",
       startTime: startTime || Date.now(),
       replaceExisting: false,
+      // Manual log should follow terminal display semantics instead of dumping raw escapes.
       lineBuffered: true,
       discardPartialLineOnStop: false,
-      sanitizeControlSequences: true,
+      sanitizeControlSequences: false,
       initialLine: initialLine || "",
     });
   } catch (err) {
@@ -173,35 +177,192 @@ function flushBuffer(entry) {
 }
 
 function appendLineBufferedData(entry, dataChunk) {
-  const source = entry.sanitizeControlSequences ? stripAnsiSequences(dataChunk) : String(dataChunk || "");
-  for (const ch of source) {
+  const chunk = entry.sanitizeControlSequences ? stripAnsiSequences(dataChunk) : String(dataChunk || "");
+  const source = `${entry.pendingEscape || ""}${chunk}`;
+  entry.pendingEscape = "";
+  const overwriteCharAt = (line, index, ch) => {
+    if (index < 0) return line;
+    if (index >= line.length) {
+      return `${line}${" ".repeat(index - line.length)}${ch}`;
+    }
+    return `${line.slice(0, index)}${ch}${line.slice(index + 1)}`;
+  };
+
+  const removeCharAt = (line, index) => {
+    if (index < 0 || index >= line.length) return line;
+    return `${line.slice(0, index)}${line.slice(index + 1)}`;
+  };
+
+  const clampCursor = () => {
+    if (!Number.isFinite(entry.currentLineCursor)) {
+      entry.currentLineCursor = entry.currentLine.length;
+      return;
+    }
+    if (entry.currentLineCursor < 0) entry.currentLineCursor = 0;
+    if (entry.currentLineCursor > entry.currentLine.length) {
+      entry.currentLineCursor = entry.currentLine.length;
+    }
+  };
+
+  const applyCsi = (params, final) => {
+    const rawParts = params === "" ? [] : params.split(";");
+    const toNum = (value, fallback) => {
+      const parsed = Number.parseInt(value || "", 10);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    };
+
+    switch (final) {
+      case "D": { // Cursor Back
+        const count = Math.max(1, toNum(rawParts[0], 1));
+        entry.currentLineCursor = Math.max(0, entry.currentLineCursor - count);
+        break;
+      }
+      case "C": { // Cursor Forward
+        const count = Math.max(1, toNum(rawParts[0], 1));
+        entry.currentLineCursor = Math.min(entry.currentLine.length, entry.currentLineCursor + count);
+        break;
+      }
+      case "G": { // Cursor Horizontal Absolute
+        const col = Math.max(1, toNum(rawParts[0], 1));
+        entry.currentLineCursor = Math.min(entry.currentLine.length, col - 1);
+        break;
+      }
+      case "K": { // Erase in Line
+        const mode = toNum(rawParts[0], 0);
+        clampCursor();
+        if (mode === 0) {
+          entry.currentLine = entry.currentLine.slice(0, entry.currentLineCursor);
+        } else if (mode === 1) {
+          entry.currentLine = entry.currentLine.slice(entry.currentLineCursor);
+          entry.currentLineCursor = 0;
+        } else if (mode === 2) {
+          entry.currentLine = "";
+          entry.currentLineCursor = 0;
+        }
+        break;
+      }
+      case "P": { // Delete Character(s)
+        const count = Math.max(1, toNum(rawParts[0], 1));
+        clampCursor();
+        for (let i = 0; i < count; i += 1) {
+          entry.currentLine = removeCharAt(entry.currentLine, entry.currentLineCursor);
+        }
+        break;
+      }
+      case "@": { // Insert Character(s)
+        const count = Math.max(1, toNum(rawParts[0], 1));
+        clampCursor();
+        entry.currentLine = `${entry.currentLine.slice(0, entry.currentLineCursor)}${" ".repeat(count)}${entry.currentLine.slice(entry.currentLineCursor)}`;
+        break;
+      }
+      case "J": { // Erase in Display (line-mode fallback: clear to EOL)
+        clampCursor();
+        entry.currentLine = entry.currentLine.slice(0, entry.currentLineCursor);
+        break;
+      }
+      default:
+        // Ignore unsupported sequences.
+        break;
+    }
+    clampCursor();
+  };
+
+  const consumeEscape = (input, startIndex) => {
+    const next = input[startIndex + 1];
+    if (!next) {
+      entry.pendingEscape = input.slice(startIndex);
+      return input.length - 1;
+    }
+
+    // OSC: ESC ] ... BEL or ESC ] ... ESC \
+    if (next === "]") {
+      let cursor = startIndex + 2;
+      while (cursor < input.length) {
+        if (input[cursor] === "\x07") return cursor;
+        if (input[cursor] === "\x1b" && input[cursor + 1] === "\\") return cursor + 1;
+        cursor += 1;
+      }
+      entry.pendingEscape = input.slice(startIndex);
+      return input.length - 1;
+    }
+
+    // CSI: ESC [ ... final-byte
+    if (next === "[") {
+      let cursor = startIndex + 2;
+      let params = "";
+      while (cursor < input.length) {
+        const ch = input[cursor];
+        const code = ch.charCodeAt(0);
+        if (code >= 0x40 && code <= 0x7e) {
+          applyCsi(params, ch);
+          return cursor;
+        }
+        params += ch;
+        cursor += 1;
+      }
+      entry.pendingEscape = input.slice(startIndex);
+      return input.length - 1;
+    }
+
+    // Other ESC forms: skip ESC + next byte.
+    return startIndex + 1;
+  };
+
+  for (let idx = 0; idx < source.length; idx += 1) {
+    const ch = source[idx];
+
+    if (ch === "\x1b") {
+      idx = consumeEscape(source, idx);
+      continue;
+    }
+
     if (entry.pendingCarriageReturn) {
       if (ch === "\n") {
         entry.buffer += `${entry.currentLine}\n`;
         entry.currentLine = "";
+        entry.currentLineCursor = 0;
         entry.pendingCarriageReturn = false;
+        entry.skipNextLFAfterCRLF = true;
         continue;
       }
-      // Standalone '\r': cursor returned to line start, next chars overwrite line.
+      if (entry.currentLine.length > 0) {
+        entry.buffer += `${entry.currentLine}\n`;
+      }
       entry.currentLine = "";
+      entry.currentLineCursor = 0;
       entry.pendingCarriageReturn = false;
+      entry.skipNextLFAfterCRLF = false;
     }
 
     if (ch === "\r") {
-      // Delay decision: CRLF means real newline; standalone CR means line overwrite.
       entry.pendingCarriageReturn = true;
       continue;
     }
 
     if (ch === "\n") {
+      // Some devices emit CRLF + LF; drop the extra LF only once.
+      if (entry.currentLine.length === 0 && entry.skipNextLFAfterCRLF) {
+        entry.skipNextLFAfterCRLF = false;
+        continue;
+      }
       entry.buffer += `${entry.currentLine}\n`;
       entry.currentLine = "";
+      entry.currentLineCursor = 0;
+      entry.skipNextLFAfterCRLF = false;
       continue;
     }
 
-    if (ch === "\b" || ch === "\x7f") {
-      if (entry.currentLine.length > 0) {
-        entry.currentLine = entry.currentLine.slice(0, -1);
+    if (ch === "\b") {
+      if (entry.currentLineCursor > 0) {
+        entry.currentLineCursor -= 1;
+      }
+      continue;
+    }
+
+    if (ch === "\x7f") {
+      if (entry.currentLineCursor > 0) {
+        entry.currentLineCursor -= 1;
+        entry.currentLine = removeCharAt(entry.currentLine, entry.currentLineCursor);
       }
       continue;
     }
@@ -211,7 +372,10 @@ function appendLineBufferedData(entry, dataChunk) {
       continue;
     }
 
-    entry.currentLine += ch;
+    entry.skipNextLFAfterCRLF = false;
+    clampCursor();
+    entry.currentLine = overwriteCharAt(entry.currentLine, entry.currentLineCursor, ch);
+    entry.currentLineCursor += 1;
   }
 }
 
@@ -247,15 +411,21 @@ async function stopStream(sessionId) {
   }
 
   if (entry.lineBuffered) {
+    if (entry.pendingEscape) {
+      entry.pendingEscape = "";
+    }
     if (entry.pendingCarriageReturn) {
       entry.buffer += `${entry.currentLine}\n`;
       entry.currentLine = "";
+      entry.currentLineCursor = 0;
       entry.pendingCarriageReturn = false;
     }
+    entry.skipNextLFAfterCRLF = false;
     if (!entry.discardPartialLineOnStop && entry.currentLine.length > 0) {
       entry.buffer += `${entry.currentLine}\n`;
     }
     entry.currentLine = "";
+    entry.currentLineCursor = 0;
   }
 
   flushBuffer(entry);
