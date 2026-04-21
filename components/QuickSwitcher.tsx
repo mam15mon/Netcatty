@@ -112,6 +112,9 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const pendingNavDeltaRef = useRef(0);
+  const navRafRef = useRef<number | null>(null);
+  const scrollRafRef = useRef<number | null>(null);
 
   // Reset state when opening
   useEffect(() => {
@@ -144,19 +147,6 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen, onClose]);
-
-  // Scroll into view when selection changes
-  useEffect(() => {
-    if (!isOpen) return;
-    // Small delay to ensure the DOM is updated
-    const timer = setTimeout(() => {
-      const selectedElement = containerRef.current?.querySelector('[data-selected="true"]');
-      if (selectedElement) {
-        selectedElement.scrollIntoView({ block: "nearest" });
-      }
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [selectedIndex, isOpen]);
 
   // Memoize orphan sessions
   const orphanSessions = useMemo(
@@ -218,15 +208,69 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
     return itemIndexMap.get(`${type}:${id}`) ?? -1;
   }, [itemIndexMap]);
 
+  const clampIndex = useCallback((next: number) => {
+    if (flatItems.length <= 0) return 0;
+    return Math.max(0, Math.min(next, flatItems.length - 1));
+  }, [flatItems.length]);
+
+  const flushPendingNavigation = useCallback(() => {
+    navRafRef.current = null;
+    const delta = pendingNavDeltaRef.current;
+    pendingNavDeltaRef.current = 0;
+    if (delta === 0) return;
+    setSelectedIndex((prev) => clampIndex(prev + delta));
+  }, [clampIndex]);
+
+  const queueNavigation = useCallback((delta: number) => {
+    pendingNavDeltaRef.current += delta;
+    if (navRafRef.current !== null) return;
+    navRafRef.current = window.requestAnimationFrame(flushPendingNavigation);
+  }, [flushPendingNavigation]);
+
+  useEffect(() => {
+    return () => {
+      if (navRafRef.current !== null) {
+        window.cancelAnimationFrame(navRafRef.current);
+        navRafRef.current = null;
+      }
+      if (scrollRafRef.current !== null) {
+        window.cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = null;
+      }
+      pendingNavDeltaRef.current = 0;
+    };
+  }, []);
+
+  // Scroll into view when selection changes (merged to one update per frame)
+  useEffect(() => {
+    if (!isOpen) return;
+    if (scrollRafRef.current !== null) {
+      window.cancelAnimationFrame(scrollRafRef.current);
+    }
+    scrollRafRef.current = window.requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      const selectedElement = containerRef.current?.querySelector('[data-selected="true"]');
+      if (selectedElement) {
+        selectedElement.scrollIntoView({ block: "nearest" });
+      }
+    });
+    return () => {
+      if (scrollRafRef.current !== null) {
+        window.cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = null;
+      }
+    };
+  }, [selectedIndex, isOpen]);
+
   if (!isOpen) return null;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setSelectedIndex((prev) => Math.min(prev + 1, flatItems.length - 1));
+      queueNavigation(1);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setSelectedIndex((prev) => Math.max(prev - 1, 0));
+      queueNavigation(-1);
     } else if (e.key === "Enter" && flatItems.length > 0) {
       e.preventDefault();
       const item = flatItems[selectedIndex];
