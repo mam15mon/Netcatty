@@ -77,6 +77,7 @@ import SerialHostDetailsPanel from "./SerialHostDetailsPanel";
 import SnippetsManager from "./SnippetsManager";
 import { ImportVaultDialog, ImportOptions } from "./vault/ImportVaultDialog";
 import { Button } from "./ui/button";
+import { RippleButton } from "./ui/ripple";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -1685,24 +1686,26 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
       <TooltipProvider delayDuration={100}>
         <div
           className={cn(
-            "bg-secondary/80 border-r border-border/60 flex flex-col transition-all duration-200",
+            "bg-secondary border-r border-border/60 flex flex-col transition-all duration-200",
             sidebarCollapsed ? "w-14" : "w-52"
           )}
           data-section="vault-sidebar"
         >
           <div className={cn(
-            "py-4 flex items-center",
+            "pt-5 pb-6 flex items-center",
             sidebarCollapsed ? "px-2 justify-center" : "px-4"
           )}>
             <Tooltip delayDuration={500}>
               <TooltipTrigger asChild>
                 <button
                   onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                  className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+                  className="flex items-center gap-2.5 hover:opacity-80 transition-opacity"
                 >
-                  <AppLogo className="h-10 w-10 rounded-xl flex-shrink-0" />
+                  <AppLogo className="h-8 w-8 flex-shrink-0" />
                   {!sidebarCollapsed && (
-                    <p className="text-sm font-bold text-foreground">Netcatty</p>
+                    <p className="text-xl font-black italic tracking-tight text-foreground leading-none">
+                      Netcatty
+                    </p>
                   )}
                 </button>
               </TooltipTrigger>
@@ -1715,7 +1718,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
           <div className={cn("space-y-1", sidebarCollapsed ? "px-1.5" : "px-3")}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
+                <RippleButton
                   variant={currentSection === "hosts" ? "secondary" : "ghost"}
                   className={cn(
                     "w-full h-10",
@@ -1730,13 +1733,13 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                 >
                   <LayoutGrid size={16} className="flex-shrink-0" />
                   {!sidebarCollapsed && t("vault.nav.hosts")}
-                </Button>
+                </RippleButton>
               </TooltipTrigger>
               {sidebarCollapsed && <TooltipContent side="right">{t("vault.nav.hosts")}</TooltipContent>}
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
+                <RippleButton
                   variant={currentSection === "keys" ? "secondary" : "ghost"}
                   className={cn(
                     "w-full h-10",
@@ -1750,13 +1753,13 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                 >
                   <Key size={16} className="flex-shrink-0" />
                   {!sidebarCollapsed && t("vault.nav.keychain")}
-                </Button>
+                </RippleButton>
               </TooltipTrigger>
               {sidebarCollapsed && <TooltipContent side="right">{t("vault.nav.keychain")}</TooltipContent>}
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
+                <RippleButton
                   variant={currentSection === "port" ? "secondary" : "ghost"}
                   className={cn(
                     "w-full h-10",
@@ -1768,13 +1771,13 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                 >
                   <Plug size={16} className="flex-shrink-0" />
                   {!sidebarCollapsed && t("vault.nav.portForwarding")}
-                </Button>
+                </RippleButton>
               </TooltipTrigger>
               {sidebarCollapsed && <TooltipContent side="right">{t("vault.nav.portForwarding")}</TooltipContent>}
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
+                <RippleButton
                   variant={currentSection === "snippets" ? "secondary" : "ghost"}
                   className={cn(
                     "w-full h-10",
@@ -1788,13 +1791,13 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                 >
                   <FileCode size={16} className="flex-shrink-0" />
                   {!sidebarCollapsed && t("vault.nav.snippets")}
-                </Button>
+                </RippleButton>
               </TooltipTrigger>
               {sidebarCollapsed && <TooltipContent side="right">{t("vault.nav.snippets")}</TooltipContent>}
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
+                <RippleButton
                   variant={currentSection === "knownhosts" ? "secondary" : "ghost"}
                   className={cn(
                     "w-full h-10",
@@ -1806,13 +1809,13 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                 >
                   <BookMarked size={16} className="flex-shrink-0" />
                   {!sidebarCollapsed && t("vault.nav.knownHosts")}
-                </Button>
+                </RippleButton>
               </TooltipTrigger>
               {sidebarCollapsed && <TooltipContent side="right">{t("vault.nav.knownHosts")}</TooltipContent>}
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
+                <RippleButton
                   variant={currentSection === "logs" ? "secondary" : "ghost"}
                   className={cn(
                     "w-full h-10",
@@ -1824,7 +1827,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                 >
                   <Activity size={16} className="flex-shrink-0" />
                   {!sidebarCollapsed && t("vault.nav.logs")}
-                </Button>
+                </RippleButton>
               </TooltipTrigger>
               {sidebarCollapsed && <TooltipContent side="right">{t("vault.nav.logs")}</TooltipContent>}
             </Tooltip>
