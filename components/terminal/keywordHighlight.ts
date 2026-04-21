@@ -121,6 +121,7 @@ export class KeywordHighlighter implements IDisposable {
     for (const rule of rules) {
       if (!rule.enabled || rule.patterns.length === 0) continue;
       for (const pattern of rule.patterns) {
+        if (!pattern) continue;  // Skip empty patterns — RegExp("") is valid but matches nothing useful
         try {
           this.compiledRules.push({
             regex: new RegExp(pattern, "gi"),
@@ -402,21 +403,10 @@ export class KeywordHighlighter implements IDisposable {
     if (reason === "write") {
       this.processDirtyLinesInRange(rangeStart, rangeEnd, cursorAbsoluteY, "write");
     } else if (reason === "scroll") {
-      const shouldIncrementalViewport =
-        previousViewportRange !== null &&
-        this.lineDecorations.size > 0 &&
-        viewportStart <= previousViewportRange.end &&
-        viewportEnd >= previousViewportRange.start;
-      if (!shouldIncrementalViewport) {
-        this.processLineRange(viewportStart, viewportEnd, cursorAbsoluteY);
-      } else {
-        if (viewportStart < previousViewportRange.start) {
-          this.processLineRange(viewportStart, Math.min(viewportEnd, previousViewportRange.start - 1), cursorAbsoluteY);
-        }
-        if (viewportEnd > previousViewportRange.end) {
-          this.processLineRange(Math.max(viewportStart, previousViewportRange.end + 1), viewportEnd, cursorAbsoluteY);
-        }
-      }
+      // Always process the full viewport on scroll.
+      // Incremental-only processing can miss lines when scroll/render/write
+      // events interleave and coverage bookkeeping becomes stale.
+      this.processLineRange(viewportStart, viewportEnd, cursorAbsoluteY);
       if (rangeStart < viewportStart) {
         this.addDirtyRange(rangeStart, viewportStart - 1);
       }
@@ -441,8 +431,16 @@ export class KeywordHighlighter implements IDisposable {
       }
     }
 
-    this.lastViewportRange = { start: viewportStart, end: viewportEnd };
-    this.lastRenderRange = { start: rangeStart, end: rangeEnd };
+    // `write` refresh only processes dirty lines and does NOT guarantee the whole
+    // viewport/render range is covered. If we still persist these ranges, later
+    // scroll refreshes may take an incremental path and incorrectly skip lines.
+    if (reason === "write") {
+      this.lastViewportRange = null;
+      this.lastRenderRange = null;
+    } else {
+      this.lastViewportRange = { start: viewportStart, end: viewportEnd };
+      this.lastRenderRange = { start: rangeStart, end: rangeEnd };
+    }
   }
 
   private reindexLineDecorationsFromMarkers() {
@@ -520,7 +518,10 @@ export class KeywordHighlighter implements IDisposable {
   }
 
   private mergeRefreshReason(current: RefreshReason, next: RefreshReason): RefreshReason {
-    const weight: Record<RefreshReason, number> = { scroll: 0, write: 1, full: 2 };
+    // Scroll refresh must outrank write refresh. During rapid wheel scroll with
+    // concurrent output, choosing "write" can skip viewport line scans and leave
+    // visible gaps until another scroll/render cycle lands.
+    const weight: Record<RefreshReason, number> = { write: 0, scroll: 1, full: 2 };
     return weight[next] > weight[current] ? next : current;
   }
 
@@ -859,7 +860,9 @@ export class KeywordHighlighter implements IDisposable {
             cellMap = this.buildStringToCellMap(line);
           }
           cellStartCol = cellMap[strStart] ?? strStart;
-          cellEndCol = cellMap[strEnd] ?? strEnd;
+          cellEndCol = strEnd < cellMap.length
+            ? (cellMap[strEnd] ?? strEnd)
+            : (cellMap[cellMap.length - 1] ?? strEnd);
         }
 
         const cellWidth = cellEndCol - cellStartCol;
@@ -888,6 +891,11 @@ export class KeywordHighlighter implements IDisposable {
   }
 
   private mergeDecorationRanges(ranges: CachedDecorationRange[]): CachedDecorationRange[] {
+    // Sort by color first, then by x position so overlapping same-color
+    // ranges from different rules are adjacent and can be merged.
+    ranges.sort((a, b) =>
+      a.color < b.color ? -1 : a.color > b.color ? 1 : a.x - b.x
+    );
     const merged: CachedDecorationRange[] = [ranges[0]];
 
     for (let index = 1; index < ranges.length; index += 1) {
