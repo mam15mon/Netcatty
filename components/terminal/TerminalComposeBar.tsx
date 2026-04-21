@@ -1,10 +1,13 @@
 /**
  * Terminal Compose Bar
- * A high-fidelity "Command Window" inspired by SecureCRT.
- * Features a header with target selection and a large multi-line input area.
+ * An immersive, borderless prompt bar that blends into the terminal's
+ * background — like the Claude Code compose area. Enter sends, Escape
+ * closes, Shift+Enter inserts a newline. The only visible chrome is a
+ * hair-line top border separating it from the terminal output, while
+ * preserving Netcatty's send-target and broadcast controls.
  */
 import { Radio, X } from 'lucide-react';
-import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { cn } from '../../lib/utils';
 
@@ -52,7 +55,6 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
 }) => {
     const { t } = useI18n();
 
-    // Fallback translations
     const getLabel = useCallback((key: string, fallback: string) => {
         const val = t(key);
         if (val === key || /^[A-Z._]+$/.test(val)) return fallback;
@@ -86,14 +88,11 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
         }
     }, [resolvedSendTarget, getLabel]);
 
-
-
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const isComposingRef = useRef(false);
     const [internalValue, setInternalValue] = useState('');
     const inputValue = value ?? internalValue;
 
-    // Auto-focus on mount
     useEffect(() => {
         const timer = setTimeout(() => textareaRef.current?.focus(), 50);
         return () => clearTimeout(timer);
@@ -132,20 +131,19 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
 
     return (
         <div
-            className="flex-shrink-0 flex flex-col w-full text-xs font-sans select-none border-t border-border/40"
+            className="flex-shrink-0 flex flex-col w-full text-xs font-sans select-none"
             style={{
                 backgroundColor: resolvedBg,
                 color: resolvedFg,
+                borderTop: `1px solid color-mix(in srgb, ${resolvedFg} 8%, ${resolvedBg} 92%)`,
             }}
         >
-            {/* SecureCRT Header Bar */}
-            <div 
-                className="flex items-center h-8 px-2 gap-2 border-b border-border/20"
+            <div
+                className="flex items-center h-8 px-3 gap-2"
                 style={{
                     backgroundColor: `color-mix(in srgb, ${resolvedFg} 5%, transparent)`,
                 }}
             >
-                {/* Target Dropdown Selector */}
                 {onSendTargetChange && (
                     <Select
                         value={resolvedSendTarget}
@@ -175,10 +173,8 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                 )}
 
                 <div className="w-px h-3 bg-border/40 mx-1" />
-
                 <div className="flex-1" />
 
-                {/* Right side controls */}
                 <div className="flex items-center gap-1">
                     {showBroadcastToggle && (
                         <button
@@ -203,19 +199,18 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                 </div>
             </div>
 
-            {/* Input Area */}
-            <div className="relative w-full p-2">
+            <div className="relative w-full px-3 py-2">
                 <textarea
                     ref={textareaRef}
                     className={cn(
                         "w-full resize-none bg-transparent text-[13px] font-mono leading-relaxed",
-                        "outline-none transition-all duration-200 block",
-                        "placeholder:opacity-20",
+                        "outline-none transition-all duration-200 block border-none",
+                        "placeholder:opacity-70",
                     )}
                     style={{
                         color: resolvedFg,
-                        minHeight: '60px',
-                        maxHeight: '200px',
+                        minHeight: '20px',
+                        maxHeight: '120px',
                     }}
                     value={inputValue}
                     placeholder={getLabel("terminal.composeBar.placeholder", "Enter commands to send to session...")}
@@ -224,8 +219,6 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                     onCompositionStart={() => { isComposingRef.current = true; }}
                     onCompositionEnd={() => { isComposingRef.current = false; }}
                 />
-                
-                {/* Visual Cue: Bottom right send button hint or similar could be added here */}
             </div>
         </div>
     );
