@@ -38,6 +38,7 @@ const HostItem = memo(({
   onMouseEnter: () => void;
 }) => (
   <div
+    data-selected={isSelected}
     className={`flex items-center justify-between px-4 py-2.5 cursor-pointer transition-colors ${isSelected ? "bg-primary/15" : "hover:bg-muted/50"
       }`}
     onClick={() => onSelect(host)}
@@ -143,6 +144,19 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen, onClose]);
+
+  // Scroll into view when selection changes
+  useEffect(() => {
+    if (!isOpen) return;
+    // Small delay to ensure the DOM is updated
+    const timer = setTimeout(() => {
+      const selectedElement = containerRef.current?.querySelector('[data-selected="true"]');
+      if (selectedElement) {
+        selectedElement.scrollIntoView({ block: "nearest" });
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [selectedIndex, isOpen]);
 
   // Memoize orphan sessions
   const orphanSessions = useMemo(
@@ -334,6 +348,7 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
                 return (
                   <div
                     key={tabId}
+                    data-selected={isSelected}
                     className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${isSelected ? "bg-primary/15" : "hover:bg-muted/50"
                       }`}
                     onClick={() => {
@@ -358,6 +373,7 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
                 return (
                   <div
                     key={workspace.id}
+                    data-selected={isSelected}
                     className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${isSelected ? "bg-primary/15" : "hover:bg-muted/50"
                       }`}
                     onClick={() => {
@@ -384,6 +400,7 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
                 return (
                   <div
                     key={session.id}
+                    data-selected={isSelected}
                     className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${isSelected ? "bg-primary/15" : "hover:bg-muted/50"
                       }`}
                     onClick={() => {
@@ -418,6 +435,7 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
                   return (
                     <div
                       key={shell.id}
+                      data-selected={isSelected}
                       className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${
                         isSelected ? "bg-primary/15" : "hover:bg-muted/50"
                       }`}
@@ -452,6 +470,7 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
                   </span>
                 </div>
                 <div
+                  data-selected={getItemIndex("action", "local-terminal") === selectedIndex}
                   className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${
                     getItemIndex("action", "local-terminal") === selectedIndex
                       ? "bg-primary/15"
