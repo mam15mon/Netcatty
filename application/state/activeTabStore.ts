@@ -4,10 +4,9 @@ import { useCallback,useSyncExternalStore } from 'react';
 type Listener = () => void;
 
 /**
- * Debounce delay for the "committed" tab ID.  During rapid Ctrl+Tab cycling
- * (70 ms intervals), the committed ID only updates once the user pauses for
- * longer than this threshold.  Heavyweight subscribers (TerminalLayer) use
- * the committed value so they skip intermediate re-renders/resize/fit/IPC.
+ * Debounce delay for the "committed" tab ID.
+ * Heavyweight subscribers (TerminalLayer) use this value so rapid Ctrl+Tab
+ * cycling doesn't trigger intermediate expensive re-renders.
  */
 const COMMITTED_DEBOUNCE_MS = 90;
 
@@ -18,12 +17,10 @@ class ActiveTabStore {
 
   // --- Committed (debounced) tab ID ---
   // Heavy components subscribe to this to avoid re-rendering on every rapid
-  // Ctrl+Tab switch.  It updates immediately for normal interactions and is
-  // debounced only when switches happen faster than COMMITTED_DEBOUNCE_MS.
+  // Ctrl+Tab switch. It is updated with trailing debounce only.
   private committedTabId: string = 'vault';
   private committedListeners = new Set<Listener>();
   private commitTimer: number | null = null;
-  private lastChangeTime = 0;
 
   getActiveTabId = () => this.activeTabId;
   getCommittedTabId = () => this.committedTabId;
@@ -43,30 +40,15 @@ class ActiveTabStore {
     }
   };
 
-  /**
-   * Adaptively commit the active tab ID.  If the last change was recent
-   * (rapid cycling), debounce; otherwise commit immediately.
-   */
   private scheduleCommit() {
-    const now = performance.now();
-    const dt = now - this.lastChangeTime;
-    this.lastChangeTime = now;
-
     if (this.commitTimer !== null) {
       window.clearTimeout(this.commitTimer);
       this.commitTimer = null;
     }
-
-    if (dt < COMMITTED_DEBOUNCE_MS + 30) {
-      // Rapid switching detected – defer commit
-      this.commitTimer = window.setTimeout(() => {
-        this.commitTimer = null;
-        this.flushCommit();
-      }, COMMITTED_DEBOUNCE_MS);
-    } else {
-      // Normal switch – commit synchronously (still notifies via microtask)
+    this.commitTimer = window.setTimeout(() => {
+      this.commitTimer = null;
       this.flushCommit();
-    }
+    }, COMMITTED_DEBOUNCE_MS);
   }
 
   private flushCommit() {

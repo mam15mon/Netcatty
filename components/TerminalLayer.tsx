@@ -1,6 +1,6 @@
 import { Circle, FolderTree, LayoutGrid, MessageSquare, PanelLeft, PanelRight, Palette, Server, X, Zap } from 'lucide-react';
 import React, { createContext, memo, startTransition, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { useCommittedActiveTabId } from '../application/state/activeTabStore';
+import { useActiveTabId, useCommittedActiveTabId } from '../application/state/activeTabStore';
 import {
   getSessionActivityIdsToClear,
   getValidSessionActivityIds,
@@ -523,10 +523,10 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
   closeSidePanelRef,
   activeSidePanelTabRef,
 }) => {
-  // Subscribe to committed (debounced) activeTabId — during rapid Ctrl+Tab
-  // cycling this value stays stable, avoiding expensive re-renders of the
-  // entire terminal tree (visibility toggling, ResizeObserver, fit, IPC).
-  const activeTabId = useCommittedActiveTabId();
+  // 主视图用即时 activeTabId，保证 Ctrl+Tab 时内容立即可见。
+  const activeTabId = useActiveTabId();
+  // 仅用于少数重计算（如 AI 上下文），避免高频切换时反复重建。
+  const committedActiveTabId = useCommittedActiveTabId();
   const isVaultActive = activeTabId === 'vault';
   const isSftpActive = activeTabId === 'sftp';
   const isVisible = (!isVaultActive && !isSftpActive) || !!draggingSessionId;
@@ -1989,7 +1989,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     const sessionById = new Map<string, TerminalSession>(sessions.map((session) => [session.id, session]));
     const workspaceById = new Map<string, Workspace>(workspaces.map((workspace) => [workspace.id, workspace]));
     const tabIds = new Set<string>(mountedAiTabIds);
-    if (activeTabId) tabIds.add(activeTabId);
+    if (committedActiveTabId) tabIds.add(committedActiveTabId);
 
     const contexts = new Map<string, AIPanelContext>();
 
@@ -2034,7 +2034,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     }
 
     return contexts;
-  }, [sessions, workspaces, mountedAiTabIds, activeTabId, sessionHostsMap]);
+  }, [sessions, workspaces, mountedAiTabIds, committedActiveTabId, sessionHostsMap]);
 
   const resolveAIExecutorContext = useCallback((scope: {
     type: 'terminal' | 'workspace';

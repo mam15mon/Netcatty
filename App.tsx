@@ -713,13 +713,9 @@ function App({ settings }: { settings: SettingsState }) {
         if (!e.repeat) {
           cycleTerminalTabs(action === 'nextTab' ? 'next' : 'prev');
           startContinuousCtrlTabSwitch(action);
-        } else if (!ctrlTabContinuousActiveRef.current) {
-          // During the initial hold delay (before continuous cycling starts),
-          // honour OS key-repeat so the user sees responsive switching.
-          cycleTerminalTabs(action === 'nextTab' ? 'next' : 'prev');
         }
-        // Once continuous cycling is active, repeat events are ignored
-        // (the timer handles cycling at a consistent rate).
+        // Repeat events are ignored; continuous switching is driven only by
+        // our internal timer to avoid accidental double-step on single press.
         return;
       }
 
