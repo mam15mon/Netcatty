@@ -270,6 +270,8 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   isVisibleRef.current = isVisible;
   const pendingOutputScrollRef = useRef(false);
   const lastFittedSizeRef = useRef<{ width: number; height: number } | null>(null);
+  const pendingFitOptionsRef = useRef<{ force: boolean; requireVisible: boolean } | null>(null);
+  const pendingFitRafRef = useRef<number | null>(null);
   const fontWeightFixupDoneRef = useRef(false);
 
   useEffect(() => {
@@ -681,7 +683,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     return (availableFonts.find((f) => f.id === resolvedFontId) || availableFonts[0]).family;
   }, [availableFonts, fontFamilyId, hasFontFamilyOverride, host.fontFamily]);
 
-  const WHEEL_ZOOM_FLUSH_DELAY_MS = 48;
+  const WHEEL_ZOOM_COMMIT_DELAY_MS = 220;
   const wheelZoomPendingStepsRef = useRef(0);
   const wheelZoomTimerRef = useRef<number | null>(null);
   const wheelZoomSizeRef = useRef(effectiveFontSize);
@@ -717,12 +719,14 @@ const TerminalComponent: React.FC<TerminalProps> = ({
 
     wheelZoomPendingStepsRef.current += e.deltaY < 0 ? 1 : -1;
 
-    if (wheelZoomTimerRef.current !== null) return;
+    if (wheelZoomTimerRef.current !== null) {
+      window.clearTimeout(wheelZoomTimerRef.current);
+    }
 
     wheelZoomTimerRef.current = window.setTimeout(() => {
       wheelZoomTimerRef.current = null;
       flushTerminalWheelZoom();
-    }, WHEEL_ZOOM_FLUSH_DELAY_MS);
+    }, WHEEL_ZOOM_COMMIT_DELAY_MS);
   }, [flushTerminalWheelZoom, onAdjustTerminalFontSize]);
 
   useEffect(() => {
@@ -737,9 +741,12 @@ const TerminalComponent: React.FC<TerminalProps> = ({
         window.clearTimeout(wheelZoomTimerRef.current);
         wheelZoomTimerRef.current = null;
       }
+      if (wheelZoomPendingStepsRef.current !== 0) {
+        flushTerminalWheelZoom();
+      }
       wheelZoomPendingStepsRef.current = 0;
     };
-  }, [handleTerminalWheel]);
+  }, [flushTerminalWheelZoom, handleTerminalWheel]);
 
   const effectiveTheme = useMemo(() => {
     // When "Follow Application Theme" is on and there's no active
@@ -1024,7 +1031,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     }
   }, [status]);
 
-  const safeFit = (options?: { force?: boolean; requireVisible?: boolean }) => {
+  const performSafeFit = useCallback((options?: { force?: boolean; requireVisible?: boolean }) => {
     const fitAddon = fitAddonRef.current;
     if (!fitAddon) return;
     if (options?.requireVisible && !isVisibleRef.current) return;
@@ -1050,31 +1057,58 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       }
     }
 
-    const runFit = () => {
-      try {
-        lastFittedSizeRef.current = { width, height };
-        fitAddon.fit();
-        if (typeof requestAnimationFrame === "function") {
-          requestAnimationFrame(() => {
-            autocompleteRepositionRef.current?.();
-          });
-        } else {
+    try {
+      lastFittedSizeRef.current = { width, height };
+      fitAddon.fit();
+      if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(() => {
           autocompleteRepositionRef.current?.();
-        }
-      } catch (err) {
-        logger.warn("Fit failed", err);
+        });
+      } else {
+        autocompleteRepositionRef.current?.();
       }
+    } catch (err) {
+      logger.warn("Fit failed", err);
+    }
+  }, []);
+
+  const safeFit = useCallback((options?: { force?: boolean; requireVisible?: boolean }) => {
+    const pending = pendingFitOptionsRef.current;
+    pendingFitOptionsRef.current = {
+      force: Boolean(options?.force || pending?.force),
+      requireVisible: Boolean(options?.requireVisible || pending?.requireVisible),
+    };
+
+    if (pendingFitRafRef.current !== null) {
+      return;
+    }
+
+    const runMergedFit = () => {
+      pendingFitRafRef.current = null;
+      const mergedOptions = pendingFitOptionsRef.current;
+      pendingFitOptionsRef.current = null;
+      performSafeFit(mergedOptions ?? undefined);
     };
 
     if (
       XTERM_PERFORMANCE_CONFIG.resize.useRAF &&
       typeof requestAnimationFrame === "function"
     ) {
-      requestAnimationFrame(runFit);
+      pendingFitRafRef.current = requestAnimationFrame(runMergedFit);
     } else {
-      runFit();
+      runMergedFit();
     }
-  };
+  }, [performSafeFit]);
+
+  useEffect(() => {
+    return () => {
+      if (pendingFitRafRef.current !== null && typeof cancelAnimationFrame === "function") {
+        cancelAnimationFrame(pendingFitRafRef.current);
+      }
+      pendingFitRafRef.current = null;
+      pendingFitOptionsRef.current = null;
+    };
+  }, []);
 
   // Sync xterm theme before browser paint so canvas + DOM CSS vars update in the same frame
   useLayoutEffect(() => {
@@ -1151,7 +1185,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
         lastFittedSizeRef.current = null;
       }
     }
-  }, [effectiveFontSize, effectiveFontWeight, resolvedFontFamily, terminalSettings]);
+  }, [effectiveFontSize, effectiveFontWeight, resolvedFontFamily, terminalSettings, safeFit]);
 
   useEffect(() => {
     if (!isVisible) return;
@@ -1168,7 +1202,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       }
     }, 50);
     return () => clearTimeout(timer);
-  }, [isVisible]);
+  }, [isVisible, safeFit]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1256,7 +1290,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       if (resizeTimeout) clearTimeout(resizeTimeout);
       observer.disconnect();
     };
-  }, [isVisible, isResizing]);
+  }, [isVisible, isResizing, safeFit]);
 
   const prevIsResizingRef = useRef(isResizing);
   useEffect(() => {
@@ -1267,7 +1301,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       return () => clearTimeout(timer);
     }
     prevIsResizingRef.current = isResizing;
-  }, [isResizing, isVisible]);
+  }, [isResizing, isVisible, safeFit]);
 
   useEffect(() => {
     if (!isVisible || !fitAddonRef.current) return;
@@ -1281,7 +1315,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       safeFit({ force: true, requireVisible: true });
     }, 350);
     return () => { clearTimeout(timer1); clearTimeout(timer2); };
-  }, [inWorkspace, isVisible]);
+  }, [inWorkspace, isVisible, safeFit]);
 
   // When search bar opens/closes, re-fit terminal and maintain scroll position
   useEffect(() => {
@@ -1301,7 +1335,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       });
     }, 0);
     return () => clearTimeout(timer);
-  }, [isSearchOpen]);
+  }, [isSearchOpen, safeFit]);
 
   useEffect(() => {
     const shouldAutoFocus = isVisible && termRef.current && (!inWorkspace || isFocusMode);
@@ -1417,7 +1451,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       if (resizeTimeout) clearTimeout(resizeTimeout);
       window.removeEventListener("resize", handler);
     };
-  }, [isVisible]);
+  }, [isVisible, safeFit]);
 
   const disableBracketedPasteRef = useRef(terminalSettings?.disableBracketedPaste ?? false);
   disableBracketedPasteRef.current = terminalSettings?.disableBracketedPaste ?? false;

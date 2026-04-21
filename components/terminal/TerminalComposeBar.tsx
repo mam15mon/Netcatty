@@ -3,10 +3,18 @@
  * A high-fidelity "Command Window" inspired by SecureCRT.
  * Features a header with target selection and a large multi-line input area.
  */
-import { Radio, X, ChevronDown } from 'lucide-react';
+import { Radio, X } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { cn } from '../../lib/utils';
+
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "../ui/select";
 
 type ComposeSendTarget = 'current-tab' | 'current-split' | 'all-sessions';
 
@@ -24,6 +32,7 @@ export interface TerminalComposeBarProps {
     onValueChange?: (value: string) => void;
     sendTarget?: ComposeSendTarget;
     onSendTargetChange?: (target: ComposeSendTarget) => void;
+    availableTargets?: ComposeSendTarget[];
     targetName?: string;
 }
 
@@ -38,6 +47,7 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
     onValueChange,
     sendTarget = 'current-split',
     onSendTargetChange,
+    availableTargets,
     targetName: _targetName,
 }) => {
     const { t } = useI18n();
@@ -49,14 +59,32 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
         return val;
     }, [t]);
 
+    const resolvedTargets = useMemo<ComposeSendTarget[]>(() => {
+        const defaults: ComposeSendTarget[] = ['current-split', 'current-tab', 'all-sessions'];
+        const source = availableTargets?.length ? availableTargets : defaults;
+        const unique: ComposeSendTarget[] = [];
+        source.forEach((item) => {
+            if (!unique.includes(item)) {
+                unique.push(item);
+            }
+        });
+        return unique.length ? unique : defaults;
+    }, [availableTargets]);
+
+    const resolvedSendTarget = useMemo<ComposeSendTarget>(() => {
+        if (resolvedTargets.includes(sendTarget)) return sendTarget;
+        if (resolvedTargets.includes('current-tab')) return 'current-tab';
+        return resolvedTargets[0];
+    }, [resolvedTargets, sendTarget]);
+
     const targetLabel = useMemo(() => {
-        switch (sendTarget) {
+        switch (resolvedSendTarget) {
             case 'current-tab': return getLabel("terminal.composeBar.sendTarget.currentTab", "Active Tab");
             case 'current-split': return getLabel("terminal.composeBar.sendTarget.currentSplit", "Active Session");
             case 'all-sessions': return getLabel("terminal.composeBar.sendTarget.allSessions", "All Sessions");
-            default: return sendTarget;
+            default: return resolvedSendTarget;
         }
-    }, [sendTarget, getLabel]);
+    }, [resolvedSendTarget, getLabel]);
 
 
 
@@ -119,21 +147,31 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
             >
                 {/* Target Dropdown Selector */}
                 {onSendTargetChange && (
-                    <div className="relative flex items-center group">
-                        <select
-                            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
-                            value={sendTarget}
-                            onChange={(e) => onSendTargetChange(e.target.value as ComposeSendTarget)}
-                        >
-                            <option value="current-split">{getLabel("terminal.composeBar.sendTarget.currentSplit", "Active Session")}</option>
-                            <option value="current-tab">{getLabel("terminal.composeBar.sendTarget.currentTab", "Active Tab")}</option>
-                            <option value="all-sessions">{getLabel("terminal.composeBar.sendTarget.allSessions", "All Sessions")}</option>
-                        </select>
-                        <div className="h-6 px-1.5 flex items-center gap-1.5 rounded hover:bg-white/5 transition-colors border border-border/20 bg-black/20">
-                            <span className="text-[11px] font-medium opacity-80">{targetLabel}</span>
-                            <ChevronDown size={12} className="opacity-50" />
-                        </div>
-                    </div>
+                    <Select
+                        value={resolvedSendTarget}
+                        onValueChange={(value) => onSendTargetChange(value as ComposeSendTarget)}
+                    >
+                        <SelectTrigger className="h-6 w-auto px-2 bg-black/20 border-border/20 hover:bg-white/5 transition-colors gap-1.5 focus:ring-0 focus:ring-offset-0">
+                            <SelectValue placeholder={targetLabel} />
+                        </SelectTrigger>
+                        <SelectContent className="bg-background border-border/30 z-[1000]">
+                            {resolvedTargets.includes('current-split') && (
+                                <SelectItem value="current-split">
+                                    {getLabel("terminal.composeBar.sendTarget.currentSplit", "Active Session")}
+                                </SelectItem>
+                            )}
+                            {resolvedTargets.includes('current-tab') && (
+                                <SelectItem value="current-tab">
+                                    {getLabel("terminal.composeBar.sendTarget.currentTab", "Active Tab")}
+                                </SelectItem>
+                            )}
+                            {resolvedTargets.includes('all-sessions') && (
+                                <SelectItem value="all-sessions">
+                                    {getLabel("terminal.composeBar.sendTarget.allSessions", "All Sessions")}
+                                </SelectItem>
+                            )}
+                        </SelectContent>
+                    </Select>
                 )}
 
                 <div className="w-px h-3 bg-border/40 mx-1" />

@@ -9,6 +9,8 @@ import '@fontsource/jetbrains-mono/500.css';
 import '@fontsource/jetbrains-mono/600.css';
 import App from './App';
 import { ToastProvider } from './components/ui/toast';
+import { I18nProvider } from './application/i18n/I18nProvider';
+import { useSettingsState } from './application/state/useSettingsState';
 
 const LazySettingsPage = lazy(() => import('./components/SettingsPage'));
 const LazyTrayPanel = lazy(() => import('./components/TrayPanel'));
@@ -102,31 +104,42 @@ const getRoute = () => {
 
 const root = ReactDOM.createRoot(rootElement);
 
+const CommonWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const settings = useSettingsState();
+  return (
+    <I18nProvider locale={settings.uiLanguage}>
+      <ToastProvider>
+        {children}
+      </ToastProvider>
+    </I18nProvider>
+  );
+};
+
 const renderApp = () => {
   const route = getRoute();
   if (route === 'settings') {
     root.render(
-      <ToastProvider>
+      <CommonWrapper>
         <Suspense fallback={<SettingsWindowFallback />}>
           <LazySettingsPage />
         </Suspense>
-      </ToastProvider>
+      </CommonWrapper>
     );
   } else if (route === 'tray') {
     root.render(
-      <ToastProvider>
+      <CommonWrapper>
         <Suspense fallback={<div style={{ padding: 12, color: '#fff' }}>Loading tray panel…</div>}>
           <LazyTrayPanel />
         </Suspense>
-      </ToastProvider>
+      </CommonWrapper>
     );
   } else if (route === 'composer') {
     root.render(
-      <ToastProvider>
+      <CommonWrapper>
         <Suspense fallback={null}>
           <LazyComposerWindow />
         </Suspense>
-      </ToastProvider>
+      </CommonWrapper>
     );
   } else {
     root.render(<App />);

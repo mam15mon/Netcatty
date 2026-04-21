@@ -16,6 +16,12 @@ interface CachedDecorationRange {
   color: string;
 }
 
+interface LineDecorationState {
+  marker: IMarker;
+  decorations: IDecoration[];
+  signature: string;
+}
+
 /** Shared empty array for non-matching lines to avoid per-call allocations. */
 const EMPTY_RANGES: readonly CachedDecorationRange[] = Object.freeze([]);
 
@@ -31,7 +37,7 @@ const RE_ASCII_ONLY = /^[\x00-\x7f]*$/;
 export class KeywordHighlighter implements IDisposable {
   private term: XTerm;
   private compiledRules: CompiledRule[] = [];
-  private decorations: { decoration: IDecoration; marker: IMarker }[] = [];
+  private lineDecorations = new Map<number, LineDecorationState>();
   private debounceTimer: NodeJS.Timeout | null = null;
   private animationFrameId: number | null = null;
   private lastRefreshTime: number = 0;
@@ -47,7 +53,7 @@ export class KeywordHighlighter implements IDisposable {
     this.disposables.push(
       // When user scrolls, refresh visible area
       this.term.onScroll(() => {
-        this.triggerRefresh("debounced");
+        this.triggerRefresh("immediate");
       }),
       // When new data is written, refresh on the next frame so highlights land
       // with the freshly rendered content instead of trailing behind it.
@@ -62,7 +68,7 @@ export class KeywordHighlighter implements IDisposable {
         const currentViewportY = this.term.buffer.active?.viewportY ?? 0;
         if (currentViewportY !== this.lastViewportY) {
           this.lastViewportY = currentViewportY;
-          this.triggerRefresh("debounced");
+          this.triggerRefresh("immediate");
         }
       })
     );
@@ -116,7 +122,7 @@ export class KeywordHighlighter implements IDisposable {
     // Optimization: Disable highlighting in Alternate Buffer (e.g. Vim, Htop)
     // These apps manage their own highlighting and have rapid repaints.
     if (this.term.buffer.active.type === 'alternate') {
-      if (this.decorations.length > 0) {
+      if (this.lineDecorations.size > 0) {
         this.clearDecorations();
       }
       return;
@@ -183,7 +189,7 @@ export class KeywordHighlighter implements IDisposable {
     // Re-check state: may have changed since the refresh was scheduled
     if (!this.enabled || this.compiledRules.length === 0) return;
     if (this.term.buffer.active.type === 'alternate') {
-      if (this.decorations.length > 0) this.clearDecorations();
+      if (this.lineDecorations.size > 0) this.clearDecorations();
       return;
     }
     this.lastRefreshTime = performance.now();
@@ -191,11 +197,66 @@ export class KeywordHighlighter implements IDisposable {
   }
 
   private clearDecorations() {
-    this.decorations.forEach(({ decoration, marker }) => {
-      decoration.dispose();
+    for (const [lineY, state] of this.lineDecorations) {
+      this.disposeLineDecorations(lineY, state);
+    }
+    this.lineDecorations.clear();
+  }
+
+  private disposeLineDecorations(lineY: number, state?: LineDecorationState) {
+    const target = state ?? this.lineDecorations.get(lineY);
+    if (!target) return;
+    target.decorations.forEach((decoration) => decoration.dispose());
+    target.marker.dispose();
+    this.lineDecorations.delete(lineY);
+  }
+
+  private buildRangesSignature(ranges: readonly CachedDecorationRange[]): string {
+    if (ranges.length === 0) return "";
+    let signature = "";
+    for (const range of ranges) {
+      signature += `${range.x}:${range.width}:${range.color};`;
+    }
+    return signature;
+  }
+
+  private applyLineDecorations(
+    lineY: number,
+    ranges: readonly CachedDecorationRange[],
+    signature: string,
+    cursorAbsoluteY: number,
+  ) {
+    const offset = lineY - cursorAbsoluteY;
+    const marker = this.term.registerMarker(offset);
+    if (!marker) {
+      this.lineDecorations.delete(lineY);
+      return;
+    }
+
+    const decorations: IDecoration[] = [];
+    for (const range of ranges) {
+      const decoration = this.term.registerDecoration({
+        marker,
+        x: range.x,
+        width: range.width,
+        foregroundColor: range.color,
+      });
+      if (decoration) {
+        decorations.push(decoration);
+      }
+    }
+
+    if (decorations.length === 0) {
       marker.dispose();
+      this.lineDecorations.delete(lineY);
+      return;
+    }
+
+    this.lineDecorations.set(lineY, {
+      marker,
+      decorations,
+      signature,
     });
-    this.decorations = [];
   }
 
   /**
@@ -251,44 +312,47 @@ export class KeywordHighlighter implements IDisposable {
     const cursorY = buffer.cursorY;
     const baseY = buffer.baseY;
     const cursorAbsoluteY = baseY + cursorY;
+    const visibleLines = new Set<number>();
 
-    // Clear old decorations to avoid duplicates/memory leaks
-    this.clearDecorations();
-
-    // Iterate only over the visible rows
     for (let y = 0; y < rows; y++) {
       const lineY = viewportY + y;
+      visibleLines.add(lineY);
       const line = buffer.getLine(lineY);
-      if (!line) continue;
+      if (!line) {
+        this.disposeLineDecorations(lineY);
+        continue;
+      }
 
       const lineText = line.translateToString(true); // true = trim right whitespace
-      if (!lineText) continue;
+      if (!lineText) {
+        this.disposeLineDecorations(lineY);
+        continue;
+      }
 
       const cachedRanges = this.getCachedRanges(line, lineText);
-      if (cachedRanges.length === 0) continue;
+      if (cachedRanges.length === 0) {
+        this.disposeLineDecorations(lineY);
+        continue;
+      }
 
-      // Calculate offset relative to the absolute cursor position
-      // offset = targetLineAbs - (baseY + cursorY)
-      const offset = lineY - cursorAbsoluteY;
+      const signature = this.buildRangesSignature(cachedRanges);
+      const existing = this.lineDecorations.get(lineY);
+      if (
+        existing &&
+        !existing.marker.isDisposed &&
+        existing.marker.line === lineY &&
+        existing.signature === signature
+      ) {
+        continue;
+      }
 
-      for (const range of cachedRanges) {
-        const marker = this.term.registerMarker(offset);
+      this.disposeLineDecorations(lineY, existing);
+      this.applyLineDecorations(lineY, cachedRanges, signature, cursorAbsoluteY);
+    }
 
-        if (marker) {
-          const deco = this.term.registerDecoration({
-            marker,
-            x: range.x,
-            width: range.width,
-            foregroundColor: range.color,
-          });
-
-          if (deco) {
-            this.decorations.push({ decoration: deco, marker });
-          } else {
-            // If decoration failed, cleanup marker
-            marker.dispose();
-          }
-        }
+    for (const [lineY, state] of this.lineDecorations) {
+      if (!visibleLines.has(lineY) || state.marker.isDisposed || state.marker.line !== lineY) {
+        this.disposeLineDecorations(lineY, state);
       }
     }
   }

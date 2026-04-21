@@ -91,6 +91,31 @@ type PendingSftpUpload = {
 
 type SnippetExecutor = (command: string, noAutoRun?: boolean) => void;
 
+type SessionHostCacheEntry = {
+  rawHost?: Host;
+  groupConfigsRef: GroupConfig[];
+  sessionHostId: string;
+  sessionProtocol?: Host['protocol'];
+  sessionPort?: number;
+  sessionMoshEnabled?: boolean;
+  sessionHostLabel?: string;
+  sessionHostname?: string;
+  sessionUsername?: string;
+  sessionCharset?: string;
+  sessionLocalShell?: string;
+  sessionLocalShellName?: string;
+  sessionLocalShellIcon?: string;
+  sessionLocalShellArgsSignature?: string;
+  resolvedHost: Host;
+};
+
+type SessionChainHostCacheEntry = {
+  groupConfigsRef: GroupConfig[];
+  chainHostIdsSignature: string;
+  rawChainHosts: Array<Host | undefined>;
+  resolvedChainHosts: Host[];
+};
+
 function hexToHslToken(hex: string): string {
   const normalized = hex.startsWith('#') ? hex : `#${hex}`;
   const r = parseInt(normalized.slice(1, 3), 16) / 255;
@@ -640,6 +665,43 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
   const activeWorkspace = useMemo(() => workspaces.find(w => w.id === activeTabId), [workspaces, activeTabId]);
   const activeSession = useMemo(() => sessions.find(s => s.id === activeTabId), [sessions, activeTabId]);
   const focusedSessionId = activeWorkspace?.focusedSessionId;
+  const activeTabSessionIds = useMemo(() => {
+    if (activeWorkspace) return collectSessionIds(activeWorkspace.root);
+    if (activeSession) return [activeSession.id];
+    return [];
+  }, [activeWorkspace, activeSession]);
+  const hasActiveTabSplit = !!activeWorkspace && activeTabSessionIds.length > 1;
+  const composerAvailableTargets = useMemo<Array<'current-tab' | 'current-split' | 'all-sessions'>>(() => {
+    const targets: Array<'current-tab' | 'current-split' | 'all-sessions'> = [];
+    if (hasActiveTabSplit) {
+      targets.push('current-split');
+    }
+    if (activeTabSessionIds.length > 0) {
+      targets.push('current-tab');
+    }
+    if (sessions.length > 1) {
+      targets.push('all-sessions');
+    }
+    if (targets.length === 0) {
+      targets.push('current-tab');
+    }
+    return targets;
+  }, [hasActiveTabSplit, activeTabSessionIds.length, sessions.length]);
+  const resolvedComposerSendTarget = useMemo<'current-tab' | 'current-split' | 'all-sessions'>(() => {
+    if (composerAvailableTargets.includes(composerSendTarget)) {
+      return composerSendTarget;
+    }
+    if (composerAvailableTargets.includes('current-tab')) {
+      return 'current-tab';
+    }
+    return composerAvailableTargets[0];
+  }, [composerAvailableTargets, composerSendTarget]);
+
+  useEffect(() => {
+    if (resolvedComposerSendTarget !== composerSendTarget) {
+      setComposerSendTarget(resolvedComposerSendTarget);
+    }
+  }, [resolvedComposerSendTarget, composerSendTarget, setComposerSendTarget]);
 
   // Handle broadcast input - write to all other sessions in the same workspace
   const handleBroadcastInput = useCallback((data: string, sourceSessionId: string) => {
@@ -661,22 +723,22 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     const data = text.endsWith('\n') || text.endsWith('\r') ? text : text + '\n';
     
     let targetIds: string[] = [];
-    if (composerSendTarget === 'current-split') {
+    if (resolvedComposerSendTarget === 'current-split') {
         if (focusedSessionId) targetIds = [focusedSessionId];
-    } else if (composerSendTarget === 'current-tab') {
+    } else if (resolvedComposerSendTarget === 'current-tab') {
         if (activeWorkspace) {
             targetIds = collectSessionIds(activeWorkspace.root);
         } else if (activeTabId) {
             targetIds = [activeTabId];
         }
-    } else if (composerSendTarget === 'all-sessions') {
+    } else if (resolvedComposerSendTarget === 'all-sessions') {
         targetIds = sessions.map(s => s.id);
     }
 
     targetIds.forEach(id => {
         terminalBackend.writeToSession(id, data);
     });
-  }, [composerSendTarget, focusedSessionId, activeWorkspace, activeTabId, sessions, terminalBackend]);
+  }, [resolvedComposerSendTarget, focusedSessionId, activeWorkspace, activeTabId, sessions, terminalBackend]);
 
   // Update active session context to main process for global composer
   useEffect(() => {
@@ -890,13 +952,32 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     for (const h of hosts) map.set(h.id, h);
     return map;
   }, [hosts]);
+  const sessionHostCacheRef = useRef<Map<string, SessionHostCacheEntry>>(new Map());
+  const sessionChainHostCacheRef = useRef<Map<string, SessionChainHostCacheEntry>>(new Map());
 
   // Pre-compute fallback hosts to avoid creating new objects on every render
   const sessionHostsMap = useMemo(() => {
     const map = new Map<string, Host>();
+    const cache = sessionHostCacheRef.current;
+    const validSessionIds = new Set<string>();
     for (const session of sessions) {
+      validSessionIds.add(session.id);
       const rawHost = hostMap.get(session.hostId);
+      const cached = cache.get(session.id);
       if (rawHost) {
+        const canReuseResolvedHost =
+          cached &&
+          cached.rawHost === rawHost &&
+          cached.groupConfigsRef === groupConfigs &&
+          cached.sessionHostId === session.hostId &&
+          cached.sessionProtocol === session.protocol &&
+          cached.sessionPort === session.port &&
+          cached.sessionMoshEnabled === session.moshEnabled;
+        if (canReuseResolvedHost) {
+          map.set(session.id, cached.resolvedHost);
+          continue;
+        }
+
         // Apply group config defaults so Terminal sees the merged host
         const groupDefaults = rawHost.group
           ? resolveGroupDefaults(rawHost.group, groupConfigs)
@@ -913,17 +994,57 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
           moshEnabled === existingHost.moshEnabled
         ) {
           map.set(session.id, existingHost);
+          cache.set(session.id, {
+            rawHost,
+            groupConfigsRef: groupConfigs,
+            sessionHostId: session.hostId,
+            sessionProtocol: session.protocol,
+            sessionPort: session.port,
+            sessionMoshEnabled: session.moshEnabled,
+            resolvedHost: existingHost,
+          });
         } else {
-          map.set(session.id, {
+          const resolvedHost = {
             ...existingHost,
             protocol,
             port,
             moshEnabled,
+          };
+          map.set(session.id, resolvedHost);
+          cache.set(session.id, {
+            rawHost,
+            groupConfigsRef: groupConfigs,
+            sessionHostId: session.hostId,
+            sessionProtocol: session.protocol,
+            sessionPort: session.port,
+            sessionMoshEnabled: session.moshEnabled,
+            resolvedHost,
           });
         }
       } else {
-        // Create stable fallback host object
-        map.set(session.id, {
+        const localShellArgsSignature = session.localShellArgs?.join('\u0000') ?? '';
+        const canReuseFallbackHost =
+          cached &&
+          !cached.rawHost &&
+          cached.groupConfigsRef === groupConfigs &&
+          cached.sessionHostId === session.hostId &&
+          cached.sessionProtocol === session.protocol &&
+          cached.sessionPort === session.port &&
+          cached.sessionMoshEnabled === session.moshEnabled &&
+          cached.sessionHostLabel === session.hostLabel &&
+          cached.sessionHostname === session.hostname &&
+          cached.sessionUsername === session.username &&
+          cached.sessionCharset === session.charset &&
+          cached.sessionLocalShell === session.localShell &&
+          cached.sessionLocalShellName === session.localShellName &&
+          cached.sessionLocalShellIcon === session.localShellIcon &&
+          cached.sessionLocalShellArgsSignature === localShellArgsSignature;
+        if (canReuseFallbackHost) {
+          map.set(session.id, cached.resolvedHost);
+          continue;
+        }
+
+        const fallbackHost: Host = {
           id: session.hostId,
           label: session.hostLabel || 'Local Terminal',
           hostname: session.hostname || 'localhost',
@@ -939,7 +1060,29 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
           localShellArgs: session.localShellArgs,
           localShellName: session.localShellName,
           localShellIcon: session.localShellIcon,
+        };
+        map.set(session.id, fallbackHost);
+        cache.set(session.id, {
+          groupConfigsRef: groupConfigs,
+          sessionHostId: session.hostId,
+          sessionProtocol: session.protocol,
+          sessionPort: session.port,
+          sessionMoshEnabled: session.moshEnabled,
+          sessionHostLabel: session.hostLabel,
+          sessionHostname: session.hostname,
+          sessionUsername: session.username,
+          sessionCharset: session.charset,
+          sessionLocalShell: session.localShell,
+          sessionLocalShellName: session.localShellName,
+          sessionLocalShellIcon: session.localShellIcon,
+          sessionLocalShellArgsSignature: localShellArgsSignature,
+          resolvedHost: fallbackHost,
         });
+      }
+    }
+    for (const [cachedSessionId] of cache) {
+      if (!validSessionIds.has(cachedSessionId)) {
+        cache.delete(cachedSessionId);
       }
     }
     return map;
@@ -948,22 +1091,54 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
   sessionHostsMapRef.current = sessionHostsMap;
   const sessionChainHostsMap = useMemo(() => {
     const map = new Map<string, Host[]>();
+    const cache = sessionChainHostCacheRef.current;
+    const validSessionIds = new Set<string>();
     for (const session of sessions) {
+      validSessionIds.add(session.id);
       const host = sessionHostsMap.get(session.id);
-      if (!host?.hostChain?.hostIds?.length) continue;
-      map.set(
-        session.id,
-        host.hostChain.hostIds
-          .map((hostId) => {
-            const rawChainHost = hostMap.get(hostId);
-            if (!rawChainHost) return undefined;
-            const chainGroupDefaults = rawChainHost.group
-              ? resolveGroupDefaults(rawChainHost.group, groupConfigs)
-              : {};
-            return applyGroupDefaults(rawChainHost, chainGroupDefaults);
-          })
-          .filter((value): value is Host => Boolean(value)),
-      );
+      const chainHostIds = host?.hostChain?.hostIds ?? [];
+      if (chainHostIds.length === 0) {
+        cache.delete(session.id);
+        continue;
+      }
+
+      const chainHostIdsSignature = chainHostIds.join('\u0000');
+      const rawChainHosts = chainHostIds.map((hostId) => hostMap.get(hostId));
+      const cached = cache.get(session.id);
+      const canReuseResolvedChainHosts =
+        cached &&
+        cached.groupConfigsRef === groupConfigs &&
+        cached.chainHostIdsSignature === chainHostIdsSignature &&
+        cached.rawChainHosts.length === rawChainHosts.length &&
+        rawChainHosts.every((rawHost, index) => cached.rawChainHosts[index] === rawHost);
+
+      if (canReuseResolvedChainHosts) {
+        map.set(session.id, cached.resolvedChainHosts);
+        continue;
+      }
+
+      const resolvedChainHosts = rawChainHosts
+        .map((rawChainHost) => {
+          if (!rawChainHost) return undefined;
+          const chainGroupDefaults = rawChainHost.group
+            ? resolveGroupDefaults(rawChainHost.group, groupConfigs)
+            : {};
+          return applyGroupDefaults(rawChainHost, chainGroupDefaults);
+        })
+        .filter((value): value is Host => Boolean(value));
+
+      map.set(session.id, resolvedChainHosts);
+      cache.set(session.id, {
+        groupConfigsRef: groupConfigs,
+        chainHostIdsSignature,
+        rawChainHosts,
+        resolvedChainHosts,
+      });
+    }
+    for (const [cachedSessionId] of cache) {
+      if (!validSessionIds.has(cachedSessionId)) {
+        cache.delete(cachedSessionId);
+      }
     }
     return map;
   }, [sessions, sessionHostsMap, hostMap, groupConfigs]);
@@ -2514,12 +2689,13 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
               <TerminalComposeBar
                   value={composerDraft}
                   onValueChange={setComposerDraft}
-                  sendTarget={composerSendTarget}
+                  sendTarget={resolvedComposerSendTarget}
                   onSendTargetChange={setComposerSendTarget}
+                  availableTargets={composerAvailableTargets}
                   targetName={
-                    composerSendTarget === 'all-sessions' 
+                    resolvedComposerSendTarget === 'all-sessions' 
                       ? undefined 
-                      : (composerSendTarget === 'current-tab' && activeWorkspace)
+                      : (resolvedComposerSendTarget === 'current-tab' && activeWorkspace)
                         ? activeWorkspace.title
                         : (activeWorkspace?.focusedSessionId ? (sessionHostsMap.get(activeWorkspace.focusedSessionId)?.label ?? activeWorkspace.focusedSessionId) : (activeSession?.label ?? activeTabId))
                   }

@@ -317,6 +317,10 @@ function appendLineBufferedData(entry, dataChunk) {
     }
 
     if (entry.pendingCarriageReturn) {
+      if (ch === "\r") {
+        // Collapse repeated CR (e.g. CRCRLF) into a single pending newline.
+        continue;
+      }
       if (ch === "\n") {
         entry.buffer += `${entry.currentLine}\n`;
         entry.currentLine = "";

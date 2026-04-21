@@ -699,6 +699,26 @@ function App({ settings }: { settings: SettingsState }) {
 
       e.preventDefault();
       e.stopPropagation();
+
+      const isCtrlTabCycleHotkey =
+        !isMac &&
+        e.key === 'Tab' &&
+        e.ctrlKey &&
+        !e.altKey &&
+        !e.metaKey &&
+        (binding.action === 'nextTab' || binding.action === 'prevTab');
+
+      if (isCtrlTabCycleHotkey) {
+        const action = binding.action as 'nextTab' | 'prevTab';
+        if (!e.repeat) {
+          executeHotkeyAction(action, e);
+        }
+        startContinuousTabSwitch(action);
+        return;
+      }
+
+      stopContinuousTabSwitch();
+
       if (HOTKEY_DEBUG) {
         console.log('[Hotkeys] Global handle', {
           action: binding.action,
@@ -715,6 +735,8 @@ function App({ settings }: { settings: SettingsState }) {
       executeHotkeyAction(binding.action, e);
       return;
     }
+
+    stopContinuousTabSwitch();
   });
   const _handleEscapeKeyDown = useEffectEvent((e: KeyboardEvent) => {
     if (e.key === 'Escape' && isQuickSwitcherOpen) {
@@ -989,6 +1011,8 @@ function App({ settings }: { settings: SettingsState }) {
   // Debounce ref for moveFocus to prevent double-triggering when focus switches
   const lastMoveFocusTimeRef = useRef<number>(0);
   const MOVE_FOCUS_DEBOUNCE_MS = 200;
+  const TAB_SWITCH_HOLD_START_DELAY_MS = 120;
+  const TAB_SWITCH_HOLD_INTERVAL_MS = 85;
 
   // Use ref to store addConnectionLog to avoid circular dependencies with executeHotkeyAction
   const addConnectionLogRef = useRef(addConnectionLog);
@@ -997,6 +1021,55 @@ function App({ settings }: { settings: SettingsState }) {
   const closeSidePanelRef = useRef<(() => void) | null>(null);
   const activeSidePanelTabRef = useRef<string | null>(null);
   const closeTabInFlightRef = useRef(false);
+  const tabSwitchHoldStartTimerRef = useRef<number | null>(null);
+  const tabSwitchHoldTimerRef = useRef<number | null>(null);
+  const tabSwitchHoldActionRef = useRef<'nextTab' | 'prevTab' | null>(null);
+
+  const stopContinuousTabSwitch = useCallback(() => {
+    if (tabSwitchHoldStartTimerRef.current !== null) {
+      window.clearTimeout(tabSwitchHoldStartTimerRef.current);
+      tabSwitchHoldStartTimerRef.current = null;
+    }
+    if (tabSwitchHoldTimerRef.current !== null) {
+      window.clearInterval(tabSwitchHoldTimerRef.current);
+      tabSwitchHoldTimerRef.current = null;
+    }
+    tabSwitchHoldActionRef.current = null;
+  }, []);
+
+  const cycleTerminalTabs = useCallback((direction: 'next' | 'prev') => {
+    const terminalTabs = orderedTabs;
+    if (terminalTabs.length === 0) return;
+    const currentId = activeTabStore.getActiveTabId();
+    const currentIdx = terminalTabs.indexOf(currentId);
+    if (currentIdx === -1) {
+      setActiveTabId(direction === 'next' ? terminalTabs[0] : terminalTabs[terminalTabs.length - 1]);
+      return;
+    }
+    if (direction === 'next') {
+      const nextIdx = (currentIdx + 1) % terminalTabs.length;
+      setActiveTabId(terminalTabs[nextIdx]);
+      return;
+    }
+    const prevIdx = (currentIdx - 1 + terminalTabs.length) % terminalTabs.length;
+    setActiveTabId(terminalTabs[prevIdx]);
+  }, [orderedTabs, setActiveTabId]);
+
+  const startContinuousTabSwitch = useCallback((action: 'nextTab' | 'prevTab') => {
+    const nextDirection = action === 'nextTab' ? 'next' : 'prev';
+    if (
+      tabSwitchHoldActionRef.current === action &&
+      (tabSwitchHoldStartTimerRef.current !== null || tabSwitchHoldTimerRef.current !== null)
+    ) return;
+    stopContinuousTabSwitch();
+    tabSwitchHoldActionRef.current = action;
+    tabSwitchHoldStartTimerRef.current = window.setTimeout(() => {
+      tabSwitchHoldStartTimerRef.current = null;
+      tabSwitchHoldTimerRef.current = window.setInterval(() => {
+        cycleTerminalTabs(nextDirection);
+      }, TAB_SWITCH_HOLD_INTERVAL_MS);
+    }, TAB_SWITCH_HOLD_START_DELAY_MS);
+  }, [cycleTerminalTabs, stopContinuousTabSwitch]);
 
   const createLocalTerminalWithCurrentShell = useCallback(() => {
     const resolved = resolveShellSetting(terminalSettings.localShell, discoveredShells);
@@ -1116,9 +1189,6 @@ function App({ settings }: { settings: SettingsState }) {
     const allTabs = settings.showSftpTab
       ? ['vault', 'sftp', ...orderedTabs]
       : ['vault', ...orderedTabs];
-    // Ctrl+Tab / Ctrl+Shift+Tab should only cycle terminal-related tabs
-    // (sessions/workspaces/log views), not root tabs like Vault/SFTP.
-    const terminalTabs = orderedTabs;
     switch (action) {
       case 'switchToTab': {
         // Get the number key pressed (1-9)
@@ -1131,27 +1201,11 @@ function App({ settings }: { settings: SettingsState }) {
         break;
       }
       case 'nextTab': {
-        const currentId = activeTabStore.getActiveTabId();
-        const currentIdx = terminalTabs.indexOf(currentId);
-        if (terminalTabs.length === 0) break;
-        if (currentIdx !== -1) {
-          const nextIdx = (currentIdx + 1) % terminalTabs.length;
-          setActiveTabId(terminalTabs[nextIdx]);
-        } else {
-          setActiveTabId(terminalTabs[0]);
-        }
+        cycleTerminalTabs('next');
         break;
       }
       case 'prevTab': {
-        const currentId = activeTabStore.getActiveTabId();
-        const currentIdx = terminalTabs.indexOf(currentId);
-        if (terminalTabs.length === 0) break;
-        if (currentIdx !== -1) {
-          const prevIdx = (currentIdx - 1 + terminalTabs.length) % terminalTabs.length;
-          setActiveTabId(terminalTabs[prevIdx]);
-        } else {
-          setActiveTabId(terminalTabs[terminalTabs.length - 1]);
-        }
+        cycleTerminalTabs('prev');
         break;
       }
       case 'closeTab': {
@@ -1314,7 +1368,7 @@ function App({ settings }: { settings: SettingsState }) {
         break;
       }
     }
-  }, [orderedTabs, sessions, workspaces, setActiveTabId, closeSession, closeWorkspace, createLocalTerminalWithCurrentShell, splitSessionWithCurrentShell, moveFocusInWorkspace, toggleBroadcast, settings.showSftpTab, confirmIfBusyLocalTerminal]);
+  }, [orderedTabs, sessions, workspaces, setActiveTabId, closeSession, closeWorkspace, createLocalTerminalWithCurrentShell, splitSessionWithCurrentShell, moveFocusInWorkspace, toggleBroadcast, settings.showSftpTab, confirmIfBusyLocalTerminal, cycleTerminalTabs]);
 
   // Callback for terminal to invoke app-level hotkey actions
   const handleHotkeyAction = useCallback((action: string, e: KeyboardEvent) => {
@@ -1332,6 +1386,38 @@ function App({ settings }: { settings: SettingsState }) {
     window.addEventListener('keydown', handleGlobalKeyDown, true);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
   }, [hotkeyScheme, isHotkeyRecording]);
+
+  useEffect(() => {
+    const handleGlobalKeyUp = (e: KeyboardEvent) => {
+      if (
+        e.key === 'Control' ||
+        e.key === 'Meta' ||
+        e.key === 'Tab' ||
+        e.key === 'Shift' ||
+        (!e.ctrlKey && !e.metaKey)
+      ) {
+        stopContinuousTabSwitch();
+      }
+    };
+    const handleWindowBlur = () => {
+      stopContinuousTabSwitch();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') {
+        stopContinuousTabSwitch();
+      }
+    };
+
+    window.addEventListener('keyup', handleGlobalKeyUp, true);
+    window.addEventListener('blur', handleWindowBlur);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('keyup', handleGlobalKeyUp, true);
+      window.removeEventListener('blur', handleWindowBlur);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      stopContinuousTabSwitch();
+    };
+  }, [stopContinuousTabSwitch]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {

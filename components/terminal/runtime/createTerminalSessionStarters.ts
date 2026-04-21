@@ -28,6 +28,17 @@ const connectionTokensBySessionId = new Map<string, object>();
 const isConnectionTokenCurrent = (sessionId: string, token: object): boolean =>
   connectionTokensBySessionId.get(sessionId) === token;
 
+const outputAutoScrollRafByTerm = new WeakMap<XTerm, number>();
+
+const clearScheduledTerminalOutputAutoScroll = (term: XTerm) => {
+  const rafId = outputAutoScrollRafByTerm.get(term);
+  if (rafId === undefined) return;
+  if (typeof cancelAnimationFrame === "function") {
+    cancelAnimationFrame(rafId);
+  }
+  outputAutoScrollRafByTerm.delete(term);
+};
+
 type TerminalBackendApi = {
   backendAvailable: () => boolean;
   telnetAvailable: () => boolean;
@@ -176,20 +187,41 @@ const handleTerminalOutputAutoScroll = (
   term.scrollToBottom();
 };
 
+const scheduleTerminalOutputAutoScroll = (
+  ctx: TerminalSessionStartersContext,
+  term: XTerm,
+) => {
+  const settings = ctx.terminalSettingsRef?.current ?? ctx.terminalSettings;
+  if (!shouldScrollOnTerminalOutput(settings)) return;
+
+  if (ctx.isVisibleRef?.current === false) {
+    if (ctx.pendingOutputScrollRef) {
+      ctx.pendingOutputScrollRef.current = true;
+    }
+    return;
+  }
+
+  if (outputAutoScrollRafByTerm.has(term)) return;
+
+  if (typeof requestAnimationFrame !== "function") {
+    handleTerminalOutputAutoScroll(ctx, term);
+    return;
+  }
+
+  const rafId = requestAnimationFrame(() => {
+    outputAutoScrollRafByTerm.delete(term);
+    handleTerminalOutputAutoScroll(ctx, term);
+  });
+  outputAutoScrollRafByTerm.set(term, rafId);
+};
+
 const writeSessionData = (
   ctx: TerminalSessionStartersContext,
   term: XTerm,
   data: string,
 ) => {
-  const settings = ctx.terminalSettingsRef?.current ?? ctx.terminalSettings;
-  if (!shouldScrollOnTerminalOutput(settings)) {
-    term.write(data);
-    return;
-  }
-
-  term.write(data, () => {
-    handleTerminalOutputAutoScroll(ctx, term);
-  });
+  term.write(data);
+  scheduleTerminalOutputAutoScroll(ctx, term);
 };
 
 const attachSessionToTerminal = (
@@ -203,6 +235,7 @@ const attachSessionToTerminal = (
     convertLfToCrlf?: boolean;
   },
 ) => {
+  clearScheduledTerminalOutputAutoScroll(term);
   ctx.sessionRef.current = id;
   ctx.onSessionAttached?.(id);
 
@@ -233,6 +266,7 @@ const attachSessionToTerminal = (
   });
 
   ctx.disposeExitRef.current = ctx.terminalBackend.onSessionExit(id, (evt) => {
+    clearScheduledTerminalOutputAutoScroll(term);
     ctx.updateStatus("disconnected");
     if (evt.error) {
       ctx.setError(evt.error);
