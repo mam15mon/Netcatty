@@ -1513,6 +1513,7 @@ const zhCN: Messages = {
   'settings.shortcuts.resetAll': '全部重置',
   'settings.shortcuts.recording': '请按键...',
   'settings.shortcuts.none': '无',
+  'settings.shortcuts.setDisabled': '设为禁用',
   'settings.shortcuts.category.tabs': '标签页',
   'settings.shortcuts.category.terminal': '终端',
   'settings.shortcuts.category.navigation': '导航',
