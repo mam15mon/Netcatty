@@ -66,6 +66,8 @@ export class KeywordHighlighter implements IDisposable {
   private dirtySegments: DirtyLineSegment[] = [];
   private dirtyLineCount = 0;
   private dirtyAllInRenderRange = false;
+  private activeRefreshViewport: DirtyLineSegment | null = null;
+  private pendingTerminalRefreshRange: DirtyLineSegment | null = null;
   private lastBufferSnapshot: BufferSnapshot | null = null;
   private recentWriteBurst = 0;
   private lastWriteAt = 0;
@@ -175,6 +177,7 @@ export class KeywordHighlighter implements IDisposable {
   }
 
   private clearDecorations() {
+    const hadDecorations = this.lineDecorations.size > 0;
     for (const [lineY, state] of this.lineDecorations) {
       this.disposeLineDecorations(lineY, state);
     }
@@ -183,6 +186,9 @@ export class KeywordHighlighter implements IDisposable {
     this.lastRenderRange = null;
     this.clearDirtySegments();
     this.dirtyAllInRenderRange = false;
+    if (hadDecorations) {
+      this.term.refresh(0, this.term.rows - 1);
+    }
   }
 
   private disposeLineDecorations(lineY: number, state?: LineDecorationState) {
@@ -191,6 +197,7 @@ export class KeywordHighlighter implements IDisposable {
     target.decorations.forEach((decoration) => decoration.dispose());
     target.marker.dispose();
     this.lineDecorations.delete(lineY);
+    this.markTerminalRefreshNeeded(lineY);
   }
 
   private buildRangesSignature(ranges: readonly CachedDecorationRange[]): string {
@@ -239,6 +246,7 @@ export class KeywordHighlighter implements IDisposable {
       decorations,
       signature,
     });
+    this.markTerminalRefreshNeeded(lineY);
   }
 
   /**
@@ -386,8 +394,6 @@ export class KeywordHighlighter implements IDisposable {
   private refreshViewport(reason: RefreshReason) {
     // Safety check just in case
     if (!this.term?.buffer?.active) return;
-    this.reindexLineDecorationsFromMarkers();
-
     const buffer = this.term.buffer.active;
     const viewportY = buffer.viewportY;
     const rows = this.term.rows;
@@ -401,48 +407,83 @@ export class KeywordHighlighter implements IDisposable {
     const rangeEnd = viewportEnd + overscan;
 
     const previousRange = this.lastRenderRange;
-    const previousViewportRange = this.lastViewportRange;
+    this.beginTerminalRefreshTracking(viewportStart, viewportEnd);
+    try {
+      this.reindexLineDecorationsFromMarkers();
 
-    if (reason === "write") {
-      this.processDirtyLinesInRange(rangeStart, rangeEnd, cursorAbsoluteY, "write");
-    } else if (reason === "scroll") {
-      // Always process the full viewport on scroll.
-      // Incremental-only processing can miss lines when scroll/render/write
-      // events interleave and coverage bookkeeping becomes stale.
-      this.processLineRange(viewportStart, viewportEnd, cursorAbsoluteY);
-      if (rangeStart < viewportStart) {
-        this.addDirtyRange(rangeStart, viewportStart - 1);
+      if (reason === "write") {
+        this.processDirtyLinesInRange(rangeStart, rangeEnd, cursorAbsoluteY, "write");
+      } else if (reason === "scroll") {
+        // Always process the full viewport on scroll.
+        // Incremental-only processing can miss lines when scroll/render/write
+        // events interleave and coverage bookkeeping becomes stale.
+        this.processLineRange(viewportStart, viewportEnd, cursorAbsoluteY);
+        if (rangeStart < viewportStart) {
+          this.addDirtyRange(rangeStart, viewportStart - 1);
+        }
+        if (rangeEnd > viewportEnd) {
+          this.addDirtyRange(viewportEnd + 1, rangeEnd);
+        }
+        this.processDirtyLinesInRange(rangeStart, rangeEnd, cursorAbsoluteY, "scroll");
+      } else if (previousRange !== null && this.lineDecorations.size > 0) {
+        if (rangeStart < previousRange.start) {
+          this.processLineRange(rangeStart, Math.min(rangeEnd, previousRange.start - 1), cursorAbsoluteY);
+        }
+        if (rangeEnd > previousRange.end) {
+          this.processLineRange(Math.max(rangeStart, previousRange.end + 1), rangeEnd, cursorAbsoluteY);
+        }
+      } else {
+        this.processLineRange(rangeStart, rangeEnd, cursorAbsoluteY);
       }
-      if (rangeEnd > viewportEnd) {
-        this.addDirtyRange(viewportEnd + 1, rangeEnd);
+
+      for (const [lineY, state] of this.lineDecorations) {
+        if (lineY < rangeStart || lineY > rangeEnd || state.marker.isDisposed) {
+          this.disposeLineDecorations(lineY, state);
+        }
       }
-      this.processDirtyLinesInRange(rangeStart, rangeEnd, cursorAbsoluteY, "scroll");
-    } else if (previousRange !== null && this.lineDecorations.size > 0) {
-      if (rangeStart < previousRange.start) {
-        this.processLineRange(rangeStart, Math.min(rangeEnd, previousRange.start - 1), cursorAbsoluteY);
+
+      // `write` refresh only processes dirty lines and does NOT guarantee the whole
+      // viewport/render range is covered. If we still persist these ranges, later
+      // scroll refreshes may take an incremental path and incorrectly skip lines.
+      if (reason === "write") {
+        this.lastViewportRange = null;
+        this.lastRenderRange = null;
+      } else {
+        this.lastViewportRange = { start: viewportStart, end: viewportEnd };
+        this.lastRenderRange = { start: rangeStart, end: rangeEnd };
       }
-      if (rangeEnd > previousRange.end) {
-        this.processLineRange(Math.max(rangeStart, previousRange.end + 1), rangeEnd, cursorAbsoluteY);
-      }
-    } else {
-      this.processLineRange(rangeStart, rangeEnd, cursorAbsoluteY);
+    } finally {
+      this.flushTerminalRefresh();
     }
+  }
 
-    for (const [lineY, state] of this.lineDecorations) {
-      if (lineY < rangeStart || lineY > rangeEnd || state.marker.isDisposed) {
-        this.disposeLineDecorations(lineY, state);
-      }
+  private beginTerminalRefreshTracking(viewportStart: number, viewportEnd: number) {
+    this.activeRefreshViewport = { start: viewportStart, end: viewportEnd };
+    this.pendingTerminalRefreshRange = null;
+  }
+
+  private markTerminalRefreshNeeded(lineY: number) {
+    const viewport = this.activeRefreshViewport;
+    if (!viewport || lineY < viewport.start || lineY > viewport.end) return;
+    if (!this.pendingTerminalRefreshRange) {
+      this.pendingTerminalRefreshRange = { start: lineY, end: lineY };
+      return;
     }
+    this.pendingTerminalRefreshRange.start = Math.min(this.pendingTerminalRefreshRange.start, lineY);
+    this.pendingTerminalRefreshRange.end = Math.max(this.pendingTerminalRefreshRange.end, lineY);
+  }
 
-    // `write` refresh only processes dirty lines and does NOT guarantee the whole
-    // viewport/render range is covered. If we still persist these ranges, later
-    // scroll refreshes may take an incremental path and incorrectly skip lines.
-    if (reason === "write") {
-      this.lastViewportRange = null;
-      this.lastRenderRange = null;
-    } else {
-      this.lastViewportRange = { start: viewportStart, end: viewportEnd };
-      this.lastRenderRange = { start: rangeStart, end: rangeEnd };
+  private flushTerminalRefresh() {
+    const viewport = this.activeRefreshViewport;
+    const refreshRange = this.pendingTerminalRefreshRange;
+    this.activeRefreshViewport = null;
+    this.pendingTerminalRefreshRange = null;
+    if (!viewport || !refreshRange) return;
+
+    const startRow = Math.max(0, refreshRange.start - viewport.start);
+    const endRow = Math.min(this.term.rows - 1, refreshRange.end - viewport.start);
+    if (startRow <= endRow) {
+      this.term.refresh(startRow, endRow);
     }
   }
 
