@@ -1,6 +1,6 @@
 import { Circle, FolderTree, LayoutGrid, MessageSquare, PanelLeft, PanelRight, Palette, Server, X, Zap } from 'lucide-react';
 import React, { createContext, memo, startTransition, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { useActiveTabId } from '../application/state/activeTabStore';
+import { useCommittedActiveTabId } from '../application/state/activeTabStore';
 import {
   getSessionActivityIdsToClear,
   getValidSessionActivityIds,
@@ -523,8 +523,10 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
   closeSidePanelRef,
   activeSidePanelTabRef,
 }) => {
-  // Subscribe to activeTabId from external store
-  const activeTabId = useActiveTabId();
+  // Subscribe to committed (debounced) activeTabId — during rapid Ctrl+Tab
+  // cycling this value stays stable, avoiding expensive re-renders of the
+  // entire terminal tree (visibility toggling, ResizeObserver, fit, IPC).
+  const activeTabId = useCommittedActiveTabId();
   const isVaultActive = activeTabId === 'vault';
   const isSftpActive = activeTabId === 'sftp';
   const isVisible = (!isVaultActive && !isSftpActive) || !!draggingSessionId;

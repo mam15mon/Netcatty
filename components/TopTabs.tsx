@@ -289,6 +289,7 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [hasOverflow, setHasOverflow] = useState(false);
+  const pendingScrollStateRafRef = useRef<number | null>(null);
 
   // Check scroll state
   const updateScrollState = useCallback(() => {
@@ -347,8 +348,19 @@ const TopTabsInner: React.FC<TopTabsProps> = ({
         container.scrollLeft += (tabRect.right - containerRect.right + 8);
       }
     }
-    // Update scroll indicators after scroll
-    setTimeout(updateScrollState, 100);
+    if (pendingScrollStateRafRef.current !== null) {
+      cancelAnimationFrame(pendingScrollStateRafRef.current);
+    }
+    pendingScrollStateRafRef.current = requestAnimationFrame(() => {
+      pendingScrollStateRafRef.current = null;
+      updateScrollState();
+    });
+    return () => {
+      if (pendingScrollStateRafRef.current !== null) {
+        cancelAnimationFrame(pendingScrollStateRafRef.current);
+        pendingScrollStateRafRef.current = null;
+      }
+    };
   }, [activeTabId, updateScrollState]);
 
   // Pre-compute lookup maps for O(1) access instead of O(n) find operations

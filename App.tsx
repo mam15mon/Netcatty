@@ -711,13 +711,17 @@ function App({ settings }: { settings: SettingsState }) {
       if (isCtrlTabCycleHotkey) {
         const action = binding.action as 'nextTab' | 'prevTab';
         if (!e.repeat) {
-          executeHotkeyAction(action, e);
+          cycleTerminalTabs(action === 'nextTab' ? 'next' : 'prev');
+          startContinuousCtrlTabSwitch(action);
+        } else if (!ctrlTabContinuousActiveRef.current) {
+          // During the initial hold delay (before continuous cycling starts),
+          // honour OS key-repeat so the user sees responsive switching.
+          cycleTerminalTabs(action === 'nextTab' ? 'next' : 'prev');
         }
-        startContinuousTabSwitch(action);
+        // Once continuous cycling is active, repeat events are ignored
+        // (the timer handles cycling at a consistent rate).
         return;
       }
-
-      stopContinuousTabSwitch();
 
       if (HOTKEY_DEBUG) {
         console.log('[Hotkeys] Global handle', {
@@ -736,7 +740,6 @@ function App({ settings }: { settings: SettingsState }) {
       return;
     }
 
-    stopContinuousTabSwitch();
   });
   const _handleEscapeKeyDown = useEffectEvent((e: KeyboardEvent) => {
     if (e.key === 'Escape' && isQuickSwitcherOpen) {
@@ -1011,8 +1014,8 @@ function App({ settings }: { settings: SettingsState }) {
   // Debounce ref for moveFocus to prevent double-triggering when focus switches
   const lastMoveFocusTimeRef = useRef<number>(0);
   const MOVE_FOCUS_DEBOUNCE_MS = 200;
-  const TAB_SWITCH_HOLD_START_DELAY_MS = 120;
-  const TAB_SWITCH_HOLD_INTERVAL_MS = 85;
+  const CTRL_TAB_HOLD_START_DELAY_MS = 170;
+  const CTRL_TAB_HOLD_INTERVAL_MS = 70;
 
   // Use ref to store addConnectionLog to avoid circular dependencies with executeHotkeyAction
   const addConnectionLogRef = useRef(addConnectionLog);
@@ -1021,21 +1024,10 @@ function App({ settings }: { settings: SettingsState }) {
   const closeSidePanelRef = useRef<(() => void) | null>(null);
   const activeSidePanelTabRef = useRef<string | null>(null);
   const closeTabInFlightRef = useRef(false);
-  const tabSwitchHoldStartTimerRef = useRef<number | null>(null);
-  const tabSwitchHoldTimerRef = useRef<number | null>(null);
-  const tabSwitchHoldActionRef = useRef<'nextTab' | 'prevTab' | null>(null);
-
-  const stopContinuousTabSwitch = useCallback(() => {
-    if (tabSwitchHoldStartTimerRef.current !== null) {
-      window.clearTimeout(tabSwitchHoldStartTimerRef.current);
-      tabSwitchHoldStartTimerRef.current = null;
-    }
-    if (tabSwitchHoldTimerRef.current !== null) {
-      window.clearInterval(tabSwitchHoldTimerRef.current);
-      tabSwitchHoldTimerRef.current = null;
-    }
-    tabSwitchHoldActionRef.current = null;
-  }, []);
+  const ctrlTabHoldTimerRef = useRef<number | null>(null);
+  const ctrlTabHoldNextTickAtRef = useRef(0);
+  const ctrlTabHoldActionRef = useRef<'nextTab' | 'prevTab' | null>(null);
+  const ctrlTabContinuousActiveRef = useRef(false);
 
   const cycleTerminalTabs = useCallback((direction: 'next' | 'prev') => {
     const terminalTabs = orderedTabs;
@@ -1055,21 +1047,41 @@ function App({ settings }: { settings: SettingsState }) {
     setActiveTabId(terminalTabs[prevIdx]);
   }, [orderedTabs, setActiveTabId]);
 
-  const startContinuousTabSwitch = useCallback((action: 'nextTab' | 'prevTab') => {
-    const nextDirection = action === 'nextTab' ? 'next' : 'prev';
-    if (
-      tabSwitchHoldActionRef.current === action &&
-      (tabSwitchHoldStartTimerRef.current !== null || tabSwitchHoldTimerRef.current !== null)
-    ) return;
-    stopContinuousTabSwitch();
-    tabSwitchHoldActionRef.current = action;
-    tabSwitchHoldStartTimerRef.current = window.setTimeout(() => {
-      tabSwitchHoldStartTimerRef.current = null;
-      tabSwitchHoldTimerRef.current = window.setInterval(() => {
-        cycleTerminalTabs(nextDirection);
-      }, TAB_SWITCH_HOLD_INTERVAL_MS);
-    }, TAB_SWITCH_HOLD_START_DELAY_MS);
-  }, [cycleTerminalTabs, stopContinuousTabSwitch]);
+  const stopContinuousCtrlTabSwitch = useCallback(() => {
+    ctrlTabHoldActionRef.current = null;
+    ctrlTabContinuousActiveRef.current = false;
+    if (ctrlTabHoldTimerRef.current !== null) {
+      window.clearTimeout(ctrlTabHoldTimerRef.current);
+      ctrlTabHoldTimerRef.current = null;
+    }
+    ctrlTabHoldNextTickAtRef.current = 0;
+  }, []);
+
+  const runContinuousCtrlTabSwitch = useCallback(() => {
+    const action = ctrlTabHoldActionRef.current;
+    if (!action) return;
+    ctrlTabContinuousActiveRef.current = true;
+    cycleTerminalTabs(action === 'nextTab' ? 'next' : 'prev');
+    const now = performance.now();
+    const currentTarget = ctrlTabHoldNextTickAtRef.current || now;
+    let nextTarget = currentTarget + CTRL_TAB_HOLD_INTERVAL_MS;
+    if (nextTarget < now) {
+      nextTarget = now + CTRL_TAB_HOLD_INTERVAL_MS;
+    }
+    ctrlTabHoldNextTickAtRef.current = nextTarget;
+    const delay = Math.max(0, nextTarget - now);
+    ctrlTabHoldTimerRef.current = window.setTimeout(runContinuousCtrlTabSwitch, delay);
+  }, [cycleTerminalTabs]);
+
+  const startContinuousCtrlTabSwitch = useCallback((action: 'nextTab' | 'prevTab') => {
+    if (ctrlTabHoldActionRef.current === action && ctrlTabHoldTimerRef.current !== null) return;
+    ctrlTabHoldActionRef.current = action;
+    if (ctrlTabHoldTimerRef.current !== null) {
+      window.clearTimeout(ctrlTabHoldTimerRef.current);
+    }
+    ctrlTabHoldNextTickAtRef.current = performance.now() + CTRL_TAB_HOLD_START_DELAY_MS;
+    ctrlTabHoldTimerRef.current = window.setTimeout(runContinuousCtrlTabSwitch, CTRL_TAB_HOLD_START_DELAY_MS);
+  }, [runContinuousCtrlTabSwitch]);
 
   const createLocalTerminalWithCurrentShell = useCallback(() => {
     const resolved = resolveShellSetting(terminalSettings.localShell, discoveredShells);
@@ -1392,19 +1404,26 @@ function App({ settings }: { settings: SettingsState }) {
       if (
         e.key === 'Control' ||
         e.key === 'Meta' ||
-        e.key === 'Tab' ||
-        e.key === 'Shift' ||
         (!e.ctrlKey && !e.metaKey)
       ) {
-        stopContinuousTabSwitch();
+        // Modifier released → always stop cycling.
+        stopContinuousCtrlTabSwitch();
+      } else if (e.key === 'Tab' && !ctrlTabContinuousActiveRef.current) {
+        // Tab released before the continuous loop started (single-tap).
+        // Cancel the pending start timer so it doesn't fire a delayed switch.
+        stopContinuousCtrlTabSwitch();
       }
+      // Once continuous cycling is active, Tab keyup is ignored — only
+      // releasing the modifier key (Ctrl/Meta) stops it.  This prevents
+      // spurious Tab keyup events (common in Electron on Windows) from
+      // interrupting an otherwise smooth hold-to-cycle experience.
     };
     const handleWindowBlur = () => {
-      stopContinuousTabSwitch();
+      stopContinuousCtrlTabSwitch();
     };
     const handleVisibilityChange = () => {
       if (document.visibilityState !== 'visible') {
-        stopContinuousTabSwitch();
+        stopContinuousCtrlTabSwitch();
       }
     };
 
@@ -1415,9 +1434,9 @@ function App({ settings }: { settings: SettingsState }) {
       window.removeEventListener('keyup', handleGlobalKeyUp, true);
       window.removeEventListener('blur', handleWindowBlur);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      stopContinuousTabSwitch();
+      stopContinuousCtrlTabSwitch();
     };
-  }, [stopContinuousTabSwitch]);
+  }, [stopContinuousCtrlTabSwitch]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {

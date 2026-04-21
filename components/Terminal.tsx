@@ -683,71 +683,6 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     return (availableFonts.find((f) => f.id === resolvedFontId) || availableFonts[0]).family;
   }, [availableFonts, fontFamilyId, hasFontFamilyOverride, host.fontFamily]);
 
-  const WHEEL_ZOOM_COMMIT_DELAY_MS = 220;
-  const wheelZoomPendingStepsRef = useRef(0);
-  const wheelZoomTimerRef = useRef<number | null>(null);
-  const wheelZoomSizeRef = useRef(effectiveFontSize);
-
-  useEffect(() => {
-    wheelZoomSizeRef.current = effectiveFontSize;
-  }, [effectiveFontSize]);
-
-  const flushTerminalWheelZoom = useCallback(() => {
-    const pendingSteps = wheelZoomPendingStepsRef.current;
-    wheelZoomPendingStepsRef.current = 0;
-
-    if (!pendingSteps || !onAdjustTerminalFontSize) return;
-
-    const baseSize = wheelZoomSizeRef.current;
-    const nextFontSize = Math.max(
-      MIN_FONT_SIZE,
-      Math.min(MAX_FONT_SIZE, baseSize + pendingSteps),
-    );
-    if (nextFontSize === baseSize) return;
-
-    wheelZoomSizeRef.current = nextFontSize;
-    onAdjustTerminalFontSize(sessionId, nextFontSize);
-  }, [onAdjustTerminalFontSize, sessionId]);
-
-  const handleTerminalWheel = useCallback((e: WheelEvent) => {
-    if (!onAdjustTerminalFontSize) return;
-    if (!(e.ctrlKey || e.metaKey)) return;
-    if (e.deltaY === 0) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    wheelZoomPendingStepsRef.current += e.deltaY < 0 ? 1 : -1;
-
-    if (wheelZoomTimerRef.current !== null) {
-      window.clearTimeout(wheelZoomTimerRef.current);
-    }
-
-    wheelZoomTimerRef.current = window.setTimeout(() => {
-      wheelZoomTimerRef.current = null;
-      flushTerminalWheelZoom();
-    }, WHEEL_ZOOM_COMMIT_DELAY_MS);
-  }, [flushTerminalWheelZoom, onAdjustTerminalFontSize]);
-
-  useEffect(() => {
-    const root = terminalRootRef.current;
-    if (!root) return;
-
-    root.addEventListener("wheel", handleTerminalWheel, { passive: false });
-
-    return () => {
-      root.removeEventListener("wheel", handleTerminalWheel);
-      if (wheelZoomTimerRef.current !== null) {
-        window.clearTimeout(wheelZoomTimerRef.current);
-        wheelZoomTimerRef.current = null;
-      }
-      if (wheelZoomPendingStepsRef.current !== 0) {
-        flushTerminalWheelZoom();
-      }
-      wheelZoomPendingStepsRef.current = 0;
-    };
-  }, [flushTerminalWheelZoom, handleTerminalWheel]);
-
   const effectiveTheme = useMemo(() => {
     // When "Follow Application Theme" is on and there's no active
     // preview, skip per-host overrides — all terminals should use the
@@ -1109,6 +1044,88 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       pendingFitOptionsRef.current = null;
     };
   }, []);
+
+  const WHEEL_ZOOM_COMMIT_DELAY_MS = 220;
+  const wheelZoomTimerRef = useRef<number | null>(null);
+  const wheelZoomFitRafRef = useRef<number | null>(null);
+  const wheelZoomSizeRef = useRef(effectiveFontSize);
+  const effectiveFontSizeRef = useRef(effectiveFontSize);
+
+  useEffect(() => {
+    wheelZoomSizeRef.current = effectiveFontSize;
+    effectiveFontSizeRef.current = effectiveFontSize;
+  }, [effectiveFontSize]);
+
+  const scheduleWheelZoomPreviewFit = useCallback(() => {
+    if (wheelZoomFitRafRef.current !== null) return;
+    wheelZoomFitRafRef.current = window.requestAnimationFrame(() => {
+      wheelZoomFitRafRef.current = null;
+      safeFit({ force: true, requireVisible: true });
+    });
+  }, [safeFit]);
+
+  const applyWheelZoomPreview = useCallback((nextFontSize: number) => {
+    const term = termRef.current;
+    if (!term) return;
+    if (term.options.fontSize === nextFontSize) return;
+    term.options.fontSize = nextFontSize;
+    scheduleWheelZoomPreviewFit();
+  }, [scheduleWheelZoomPreviewFit]);
+
+  const flushTerminalWheelZoom = useCallback(() => {
+    if (!onAdjustTerminalFontSize) return;
+    const nextFontSize = wheelZoomSizeRef.current;
+    if (nextFontSize === effectiveFontSizeRef.current) return;
+    onAdjustTerminalFontSize(sessionId, nextFontSize);
+  }, [onAdjustTerminalFontSize, sessionId]);
+
+  const handleTerminalWheel = useCallback((e: WheelEvent) => {
+    if (!onAdjustTerminalFontSize) return;
+    if (!(e.ctrlKey || e.metaKey)) return;
+    if (e.deltaY === 0) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const baseSize = wheelZoomSizeRef.current;
+    const nextFontSize = Math.max(
+      MIN_FONT_SIZE,
+      Math.min(MAX_FONT_SIZE, baseSize + (e.deltaY < 0 ? 1 : -1)),
+    );
+    if (nextFontSize === baseSize) return;
+
+    wheelZoomSizeRef.current = nextFontSize;
+    applyWheelZoomPreview(nextFontSize);
+
+    if (wheelZoomTimerRef.current !== null) {
+      window.clearTimeout(wheelZoomTimerRef.current);
+    }
+
+    wheelZoomTimerRef.current = window.setTimeout(() => {
+      wheelZoomTimerRef.current = null;
+      flushTerminalWheelZoom();
+    }, WHEEL_ZOOM_COMMIT_DELAY_MS);
+  }, [applyWheelZoomPreview, flushTerminalWheelZoom, onAdjustTerminalFontSize]);
+
+  useEffect(() => {
+    const root = terminalRootRef.current;
+    if (!root) return;
+
+    root.addEventListener("wheel", handleTerminalWheel, { passive: false });
+
+    return () => {
+      root.removeEventListener("wheel", handleTerminalWheel);
+      if (wheelZoomTimerRef.current !== null) {
+        window.clearTimeout(wheelZoomTimerRef.current);
+        wheelZoomTimerRef.current = null;
+      }
+      if (wheelZoomFitRafRef.current !== null) {
+        window.cancelAnimationFrame(wheelZoomFitRafRef.current);
+        wheelZoomFitRafRef.current = null;
+      }
+      flushTerminalWheelZoom();
+    };
+  }, [flushTerminalWheelZoom, handleTerminalWheel]);
 
   // Sync xterm theme before browser paint so canvas + DOM CSS vars update in the same frame
   useLayoutEffect(() => {
