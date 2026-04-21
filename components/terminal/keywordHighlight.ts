@@ -62,7 +62,7 @@ export class KeywordHighlighter implements IDisposable {
   private lastViewportY: number = -1;
   private lastViewportRange: { start: number; end: number } | null = null;
   private lastRenderRange: { start: number; end: number } | null = null;
-  private pendingRefreshReason: RefreshReason = "scroll";
+  private pendingRefreshReason: RefreshReason = "write";
   private dirtySegments: DirtyLineSegment[] = [];
   private dirtyLineCount = 0;
   private dirtyAllInRenderRange = false;
@@ -169,7 +169,7 @@ export class KeywordHighlighter implements IDisposable {
     }
     this.lastRefreshTime = performance.now();
     const reason = this.pendingRefreshReason;
-    this.pendingRefreshReason = "scroll";
+    this.pendingRefreshReason = "write";
     this.refreshViewport(reason);
     this.lastBufferSnapshot = this.readBufferSnapshot();
   }
@@ -299,7 +299,10 @@ export class KeywordHighlighter implements IDisposable {
 
     const now = performance.now();
     if (this.shouldDeferRefreshForWriteBurst(mode, reason, now)) {
-      if (this.animationFrameId !== null) {
+      // Only cancel a pending rAF when the merged reason is still "write"
+      // (pure write burst, no scroll pending).  If a scroll event has been
+      // merged, keep the rAF alive so the viewport highlight runs on time.
+      if (this.pendingRefreshReason === "write" && this.animationFrameId !== null) {
         cancelAnimationFrame(this.animationFrameId);
         this.animationFrameId = null;
       }
