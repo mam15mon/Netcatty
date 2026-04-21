@@ -330,6 +330,7 @@ export const useSettingsState = () => {
   const incomingTerminalSettingsSignatureRef = useRef<string | null>(null);
   const localTerminalSettingsVersionRef = useRef(0);
   const broadcastedLocalTerminalSettingsVersionRef = useRef(0);
+  const [settingsVersion, setSettingsVersion] = useState(0);
 
   // Fix 1: Mount guard — skip redundant IPC broadcasts & localStorage writes on initial mount.
   // Set to true by the LAST useEffect declaration; all persist effects see false on first render.
@@ -1210,6 +1211,19 @@ export const useSettingsState = () => {
   // Subscribe to custom theme changes so editing in-place triggers re-render
   const customThemes = useCustomThemes();
 
+  useEffect(() => {
+    if (!persistMountedRef.current) return;
+    setSettingsVersion((prev) => prev + 1);
+  }, [
+    theme, lightUiThemeId, darkUiThemeId, accentMode, customAccent,
+    uiFontFamilyId, uiLanguage, customCSS,
+    terminalThemeId, terminalFontFamilyId, terminalFontSize, terminalSettings,
+    customKeyBindings, editorWordWrap,
+    sftpDoubleClickBehavior, sftpAutoSync, sftpShowHiddenFiles, sftpUseCompressedUpload, sftpAutoOpenSidebar, sftpDefaultViewMode,
+    showRecentHosts, showOnlyUngroupedHostsInRoot, showSftpTab,
+    customThemes, workspaceFocusStyle,
+  ]);
+
   const currentTerminalTheme = useMemo(() => {
     // When "Follow Application Theme" is enabled, pick the terminal theme
     // whose background matches the active UI theme preset.
@@ -1238,6 +1252,13 @@ export const useSettingsState = () => {
     const tokens = getUiThemeById(resolvedTheme, resolvedTheme === 'dark' ? darkUiThemeId : lightUiThemeId).tokens;
     applyThemeTokens(theme, resolvedTheme, tokens, accentMode, customAccent);
   }, [theme, resolvedTheme, lightUiThemeId, darkUiThemeId, accentMode, customAccent]);
+
+  const setEditorWordWrap = useCallback((enabled: boolean) => {
+    if (editorWordWrap === enabled) return;
+    setEditorWordWrapState(enabled);
+    localStorageAdapter.writeString(STORAGE_KEY_EDITOR_WORD_WRAP, String(enabled));
+    notifySettingsChanged(STORAGE_KEY_EDITOR_WORD_WRAP, enabled);
+  }, [editorWordWrap, notifySettingsChanged]);
 
   return {
     theme,
@@ -1302,11 +1323,7 @@ export const useSettingsState = () => {
     setSftpTransferConcurrency,
     // Editor Settings
     editorWordWrap,
-    setEditorWordWrap: useCallback((enabled: boolean) => {
-      setEditorWordWrapState(enabled);
-      localStorageAdapter.writeString(STORAGE_KEY_EDITOR_WORD_WRAP, String(enabled));
-      notifySettingsChanged(STORAGE_KEY_EDITOR_WORD_WRAP, enabled);
-    }, [notifySettingsChanged]),
+    setEditorWordWrap,
     // Session Logs
     sessionLogsEnabled,
     setSessionLogsEnabled,
@@ -1328,16 +1345,6 @@ export const useSettingsState = () => {
     reapplyCurrentTheme,
     workspaceFocusStyle,
     setWorkspaceFocusStyle,
-    // Opaque version that changes when any synced setting changes, used by useAutoSync.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    settingsVersion: useMemo(() => Math.random(), [
-      theme, lightUiThemeId, darkUiThemeId, accentMode, customAccent,
-      uiFontFamilyId, uiLanguage, customCSS,
-      terminalThemeId, terminalFontFamilyId, terminalFontSize, terminalSettings,
-      customKeyBindings, editorWordWrap,
-      sftpDoubleClickBehavior, sftpAutoSync, sftpShowHiddenFiles, sftpUseCompressedUpload, sftpAutoOpenSidebar, sftpDefaultViewMode,
-      showRecentHosts, showOnlyUngroupedHostsInRoot, showSftpTab,
-      customThemes, workspaceFocusStyle,
-    ]),
+    settingsVersion,
   };
 };

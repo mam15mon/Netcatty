@@ -1,5 +1,5 @@
 import { CheckSquare, ChevronRight, Edit2, FileSymlink, Folder, FolderOpen, Monitor, Server, Square, Expand, Minimize2 } from 'lucide-react';
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../application/i18n/I18nProvider';
 import { useTreeExpandedState } from '../application/state/useTreeExpandedState';
 import { sanitizeHost } from '../domain/host';
@@ -75,7 +75,7 @@ interface TreeNodeProps {
 }
 
 
-const TreeNode: React.FC<TreeNodeProps> = ({
+const TreeNode: React.FC<TreeNodeProps> = React.memo(({
   node,
   depth,
   sortMode,
@@ -295,7 +295,8 @@ const TreeNode: React.FC<TreeNodeProps> = ({
       </Collapsible>
     </div>
   );
-};
+});
+TreeNode.displayName = 'TreeNode';
 
 interface HostTreeItemProps {
   host: Host;
@@ -313,7 +314,7 @@ interface HostTreeItemProps {
   orderedHostIds?: string[];
 }
 
-const HostTreeItem: React.FC<HostTreeItemProps> = ({
+const HostTreeItem: React.FC<HostTreeItemProps> = React.memo(({
   host,
   depth,
   onConnect,
@@ -330,7 +331,7 @@ const HostTreeItem: React.FC<HostTreeItemProps> = ({
 }) => {
   const { t } = useI18n();
   const paddingLeft = `${depth * 20 + 12}px`;
-  const safeHost = sanitizeHost(host);
+  const safeHost = useMemo(() => sanitizeHost(host), [host]);
   const tags = host.tags || [];
   const isTelnet = host.protocol === 'telnet';
   const displayUsername = isTelnet
@@ -428,7 +429,8 @@ const HostTreeItem: React.FC<HostTreeItemProps> = ({
       </ContextMenuContent>
     </ContextMenu>
   );
-};
+});
+HostTreeItem.displayName = 'HostTreeItem';
 
 export const HostTreeView: React.FC<HostTreeViewProps> = ({
   groupTree,
@@ -460,6 +462,9 @@ export const HostTreeView: React.FC<HostTreeViewProps> = ({
   setDragOverDropTarget,
 }) => {
   const { t } = useI18n();
+  const ungroupedContainerRef = useRef<HTMLDivElement | null>(null);
+  const [ungroupedScrollTop, setUngroupedScrollTop] = useState(0);
+  const [ungroupedViewportHeight, setUngroupedViewportHeight] = useState(420);
 
   // Use external state if provided, otherwise use local persistent state
   const localTreeState = useTreeExpandedState(STORAGE_KEY_VAULT_HOSTS_TREE_EXPANDED);
@@ -530,6 +535,59 @@ export const HostTreeView: React.FC<HostTreeViewProps> = ({
     });
   }, [groupTree, sortMode]);
 
+  const shouldVirtualizeUngrouped = ungroupedHosts.length > 120;
+  const UNGROUPED_ITEM_HEIGHT = 44;
+  const UNGROUPED_OVERSCAN = 8;
+
+  useEffect(() => {
+    if (!shouldVirtualizeUngrouped) return;
+    const container = ungroupedContainerRef.current;
+    if (!container) return;
+
+    const updateViewport = () => {
+      setUngroupedViewportHeight(container.clientHeight);
+    };
+    updateViewport();
+
+    const onScroll = () => {
+      setUngroupedScrollTop(container.scrollTop);
+    };
+    container.addEventListener('scroll', onScroll, { passive: true });
+
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(() => updateViewport());
+      observer.observe(container);
+    }
+
+    return () => {
+      container.removeEventListener('scroll', onScroll);
+      observer?.disconnect();
+    };
+  }, [shouldVirtualizeUngrouped]);
+
+  const virtualUngroupedState = useMemo(() => {
+    if (!shouldVirtualizeUngrouped) {
+      return {
+        visibleHosts: ungroupedHosts,
+        paddingTop: 0,
+        paddingBottom: 0,
+      };
+    }
+
+    const startIndex = Math.max(0, Math.floor(ungroupedScrollTop / UNGROUPED_ITEM_HEIGHT) - UNGROUPED_OVERSCAN);
+    const visibleCount = Math.ceil(ungroupedViewportHeight / UNGROUPED_ITEM_HEIGHT) + UNGROUPED_OVERSCAN * 2;
+    const endIndex = Math.min(ungroupedHosts.length, startIndex + visibleCount);
+    const paddingTop = startIndex * UNGROUPED_ITEM_HEIGHT;
+    const paddingBottom = Math.max(0, (ungroupedHosts.length - endIndex) * UNGROUPED_ITEM_HEIGHT);
+
+    return {
+      visibleHosts: ungroupedHosts.slice(startIndex, endIndex),
+      paddingTop,
+      paddingBottom,
+    };
+  }, [shouldVirtualizeUngrouped, ungroupedHosts, ungroupedScrollTop, ungroupedViewportHeight]);
+
   return (
     <div className="space-y-1">
       {/* Expand/Collapse controls */}
@@ -588,7 +646,7 @@ export const HostTreeView: React.FC<HostTreeViewProps> = ({
       ))}
 
       {/* Ungrouped hosts at root level */}
-      {ungroupedHosts.map((host) => (
+      {!shouldVirtualizeUngrouped && ungroupedHosts.map((host) => (
         <HostTreeItem
           key={host.id}
           host={host}
@@ -605,6 +663,29 @@ export const HostTreeView: React.FC<HostTreeViewProps> = ({
           orderedHostIds={orderedHostIds}
         />
       ))}
+      {shouldVirtualizeUngrouped && (
+        <div ref={ungroupedContainerRef} className="max-h-[420px] overflow-auto">
+          <div style={{ paddingTop: virtualUngroupedState.paddingTop, paddingBottom: virtualUngroupedState.paddingBottom }}>
+            {virtualUngroupedState.visibleHosts.map((host) => (
+              <HostTreeItem
+                key={host.id}
+                host={host}
+                depth={0}
+                onConnect={onConnect}
+                onEditHost={onEditHost}
+                onDuplicateHost={onDuplicateHost}
+                onDeleteHost={onDeleteHost}
+                onCopyCredentials={onCopyCredentials}
+                moveHostToGroup={moveHostToGroup}
+                isMultiSelectMode={isMultiSelectMode}
+                selectedHostIds={selectedHostIds}
+                toggleHostSelection={toggleHostSelection}
+                orderedHostIds={orderedHostIds}
+              />
+            ))}
+          </div>
+        </div>
+      )}
       
       {/* Empty state */}
       {ungroupedHosts.length === 0 && groupTree.length === 0 && (

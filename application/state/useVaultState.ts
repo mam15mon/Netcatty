@@ -101,6 +101,16 @@ const safeParse = <T,>(value: string | null): T | null => {
   }
 };
 
+const hasConnectionLogFieldChanges = (
+  current: ConnectionLog,
+  updates: Partial<ConnectionLog>,
+): boolean => {
+  for (const [key, value] of Object.entries(updates) as [keyof ConnectionLog, ConnectionLog[keyof ConnectionLog]][]) {
+    if (current[key] !== value) return true;
+  }
+  return false;
+};
+
 export const useVaultState = () => {
   const [isInitialized, setIsInitialized] = useState(false);
   const [hosts, setHosts] = useState<Host[]>([]);
@@ -194,6 +204,11 @@ export const useVaultState = () => {
     });
   }, []);
 
+  const persistConnectionLogs = useCallback((logs: ConnectionLog[]) => {
+    localStorageAdapter.write(STORAGE_KEY_CONNECTION_LOGS, logs);
+    return logs;
+  }, []);
+
   const clearVaultData = useCallback(() => {
     updateHosts([]);
     updateKeys([]);
@@ -247,59 +262,68 @@ export const useVaultState = () => {
         id: crypto.randomUUID(),
       };
       setConnectionLogs((prev) => {
-        // Keep only the last 500 non-saved entries plus all saved entries
-        const savedLogs = prev.filter((l) => l.saved);
-        const unsavedLogs = prev.filter((l) => !l.saved);
-        const updated = [newLog, ...unsavedLogs].slice(0, 500);
-        const final = [...updated, ...savedLogs].sort(
-          (a, b) => b.startTime - a.startTime
-        );
-        localStorageAdapter.write(STORAGE_KEY_CONNECTION_LOGS, final);
-        return final;
+        const unsavedLogs: ConnectionLog[] = [newLog];
+        const savedLogs: ConnectionLog[] = [];
+        for (let i = 0; i < prev.length; i += 1) {
+          const entry = prev[i];
+          if (entry.saved) {
+            savedLogs.push(entry);
+            continue;
+          }
+          if (unsavedLogs.length < 500) {
+            unsavedLogs.push(entry);
+          }
+        }
+        const next = savedLogs.length > 0
+          ? [...unsavedLogs, ...savedLogs].sort((a, b) => b.startTime - a.startTime)
+          : unsavedLogs;
+        return persistConnectionLogs(next);
       });
       return newLog.id;
     },
-    []
+    [persistConnectionLogs]
   );
 
   const updateConnectionLog = useCallback(
     (id: string, updates: Partial<ConnectionLog>) => {
       setConnectionLogs((prev) => {
-        const updated = prev.map((log) =>
-          log.id === id ? { ...log, ...updates } : log
-        );
-        localStorageAdapter.write(STORAGE_KEY_CONNECTION_LOGS, updated);
-        return updated;
+        const targetIndex = prev.findIndex((log) => log.id === id);
+        if (targetIndex === -1) return prev;
+        const current = prev[targetIndex];
+        if (!hasConnectionLogFieldChanges(current, updates)) {
+          return prev;
+        }
+        const next = [...prev];
+        next[targetIndex] = { ...current, ...updates };
+        return persistConnectionLogs(next);
       });
     },
-    []
+    [persistConnectionLogs]
   );
 
   const toggleConnectionLogSaved = useCallback((id: string) => {
     setConnectionLogs((prev) => {
-      const updated = prev.map((log) =>
-        log.id === id ? { ...log, saved: !log.saved } : log
-      );
-      localStorageAdapter.write(STORAGE_KEY_CONNECTION_LOGS, updated);
-      return updated;
+      const targetIndex = prev.findIndex((log) => log.id === id);
+      if (targetIndex === -1) return prev;
+      const next = [...prev];
+      next[targetIndex] = { ...next[targetIndex], saved: !next[targetIndex].saved };
+      return persistConnectionLogs(next);
     });
-  }, []);
+  }, [persistConnectionLogs]);
 
   const deleteConnectionLog = useCallback((id: string) => {
     setConnectionLogs((prev) => {
       const updated = prev.filter((log) => log.id !== id);
-      localStorageAdapter.write(STORAGE_KEY_CONNECTION_LOGS, updated);
-      return updated;
+      return persistConnectionLogs(updated);
     });
-  }, []);
+  }, [persistConnectionLogs]);
 
   const clearUnsavedConnectionLogs = useCallback(() => {
     setConnectionLogs((prev) => {
       const saved = prev.filter((log) => log.saved);
-      localStorageAdapter.write(STORAGE_KEY_CONNECTION_LOGS, saved);
-      return saved;
+      return persistConnectionLogs(saved);
     });
-  }, []);
+  }, [persistConnectionLogs]);
 
   // Convert a known host to a managed host
   const convertKnownHostToHost = useCallback((knownHost: KnownHost): Host => {

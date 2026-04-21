@@ -13,6 +13,10 @@ const safeParse = <T>(value: string | null): T | null => {
  */
 function safeSetItem(key: string, value: string): boolean {
   try {
+    const current = localStorage.getItem(key);
+    if (current === value) {
+      return true;
+    }
     localStorage.setItem(key, value);
     return true;
   } catch (err) {

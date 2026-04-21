@@ -50,7 +50,7 @@ import { cn } from './lib/utils';
 import { matchesSearchQuery } from './lib/searchMatcher';
 import { classifyLocalShellType } from './lib/localShell';
 import { useDiscoveredShells, resolveShellSetting } from './lib/useDiscoveredShells';
-import { ConnectionLog, Host, HostProtocol, SerialConfig, TerminalSession, TerminalTheme } from './types';
+import { ConnectionLog, Host, HostProtocol, KnownHost, SerialConfig, Snippet, TerminalSession, TerminalTheme } from './types';
 import { LogView as LogViewType } from './application/state/useSessionState';
 import type { SftpView as SftpViewComponent } from './components/SftpView';
 import type { TerminalLayer as TerminalLayerComponent } from './components/TerminalLayer';
@@ -120,6 +120,9 @@ const IS_DEV = import.meta.env.DEV;
 const HOTKEY_DEBUG =
   IS_DEV &&
   localStorageAdapter.readString(STORAGE_KEY_DEBUG_HOTKEYS) === "1";
+const PERF_METRICS_ENABLED =
+  IS_DEV &&
+  localStorageAdapter.readString('netcatty_perf_metrics') === '1';
 
 const LazySftpView = lazy(() =>
   import('./components/SftpView').then((m) => ({ default: m.SftpView })),
@@ -188,6 +191,7 @@ function App({ settings }: { settings: SettingsState }) {
   const [keyboardInteractiveQueue, setKeyboardInteractiveQueue] = useState<KeyboardInteractiveRequest[]>([]);
   // Passphrase request queue for encrypted SSH keys
   const [passphraseQueue, setPassphraseQueue] = useState<PassphraseRequest[]>([]);
+  const lastTrayPayloadSignatureRef = useRef<string | null>(null);
 
   const {
     theme,
@@ -318,12 +322,21 @@ function App({ settings }: { settings: SettingsState }) {
   // ---------------------------------------------------------------------------
   const activeTabId = useActiveTabId();
   const customThemes = useCustomThemes();
+  const lastTabSwitchAtRef = useRef(PERF_METRICS_ENABLED ? performance.now() : 0);
 
   useEffect(() => {
     if (!settings.showSftpTab && activeTabId === 'sftp') {
       setActiveTabId('vault');
     }
   }, [settings.showSftpTab, activeTabId, setActiveTabId]);
+
+  useEffect(() => {
+    if (!PERF_METRICS_ENABLED) return;
+    const now = performance.now();
+    const elapsed = now - lastTabSwitchAtRef.current;
+    lastTabSwitchAtRef.current = now;
+    console.debug(`[Perf] tabSwitch -> ${activeTabId} (${elapsed.toFixed(2)}ms since last)`);
+  }, [activeTabId]);
 
   // Resolve the effective TerminalTheme for the currently focused terminal tab
   const hostById = useMemo(
@@ -340,9 +353,17 @@ function App({ settings }: { settings: SettingsState }) {
     () => new Map(workspaces.map((workspace) => [workspace.id, workspace])),
     [workspaces],
   );
+  const workspaceTitleById = useMemo(
+    () => new Map(workspaces.map((workspace) => [workspace.id, workspace.title])),
+    [workspaces],
+  );
   const themeById = useMemo(
     () => new Map([...customThemes, ...TERMINAL_THEMES].map((theme) => [theme.id, theme])),
     [customThemes],
+  );
+  const connectionLogById = useMemo(
+    () => new Map(connectionLogs.map((log) => [log.id, log])),
+    [connectionLogs],
   );
   const activeTerminalTheme = useMemo<TerminalTheme | null>(() => {
     if (activeTabId === 'vault' || activeTabId === 'sftp') return null;
@@ -393,8 +414,64 @@ function App({ settings }: { settings: SettingsState }) {
     restoreOriginalTheme: reapplyCurrentTheme,
   });
 
+  const handleUpdateTerminalFontWeight = useCallback((weight: number) => {
+    updateTerminalSetting('fontWeight', weight);
+  }, [updateTerminalSetting]);
+
+  const handleTerminalUpdateHost = useCallback((host: Host) => {
+    updateHosts(hosts.map((item) => (item.id === host.id ? host : item)));
+  }, [hosts, updateHosts]);
+
+  const handleTerminalAddKnownHost = useCallback((knownHost: KnownHost) => {
+    updateKnownHosts([...knownHosts, knownHost]);
+  }, [knownHosts, updateKnownHosts]);
+
+  const handleTerminalCommandExecuted = useCallback((
+    command: string,
+    hostId: string,
+    hostLabel: string,
+    sessionId: string,
+  ) => {
+    addShellHistoryEntry({ command, hostId, hostLabel, sessionId });
+  }, [addShellHistoryEntry]);
+
+  const handleQuickCreateSnippet = useCallback((snippet: Snippet) => {
+    updateSnippets([...snippets, snippet]);
+  }, [snippets, updateSnippets]);
+
+  const handleQuickCreateSnippetPackage = useCallback((pkg: string) => {
+    updateSnippetPackages(Array.from(new Set([...snippetPackages, pkg])));
+  }, [snippetPackages, updateSnippetPackages]);
+
+  const handleCloseSessionWithMetrics = useCallback((sessionId: string, e?: React.MouseEvent) => {
+    if (!PERF_METRICS_ENABLED) {
+      closeSession(sessionId, e);
+      return;
+    }
+    const start = performance.now();
+    closeSession(sessionId, e);
+    queueMicrotask(() => {
+      const elapsed = performance.now() - start;
+      console.debug(`[Perf] closeSession(${sessionId}) ${elapsed.toFixed(2)}ms`);
+    });
+  }, [closeSession]);
+
   // Get port forwarding rules and import function
   const { rules: portForwardingRules, importRules: importPortForwardingRules, startTunnel, stopTunnel } = usePortForwardingState();
+  const sessionsForTray = useMemo(() => {
+    return sessions.map((session) => ({
+      id: session.id,
+      label: session.hostname,
+      hostLabel: session.hostLabel,
+      status: session.status,
+      workspaceId: session.workspaceId,
+      workspaceTitle: session.workspaceId ? workspaceTitleById.get(session.workspaceId) : undefined,
+    }));
+  }, [sessions, workspaceTitleById]);
+  const trayPayloadSignature = useMemo(
+    () => JSON.stringify({ sessions: sessionsForTray, portForwardRules: portForwardingRules }),
+    [sessionsForTray, portForwardingRules],
+  );
 
   const portForwardingRulesForSync = useMemo(
     () =>
@@ -553,7 +630,14 @@ function App({ settings }: { settings: SettingsState }) {
   });
 
   const handleSyncNowManual = useCallback(() => {
-    return handleSyncNow({ trigger: 'manual' });
+    if (!PERF_METRICS_ENABLED) {
+      return handleSyncNow({ trigger: 'manual' });
+    }
+    const start = performance.now();
+    return handleSyncNow({ trigger: 'manual' }).finally(() => {
+      const elapsed = performance.now() - start;
+      console.debug(`[Perf] manualSync ${elapsed.toFixed(2)}ms`);
+    });
   }, [handleSyncNow]);
 
   // Update check hook - checks for new versions on startup
@@ -819,30 +903,26 @@ function App({ settings }: { settings: SettingsState }) {
     let cancelled = false;
     const timer = setTimeout(() => {
       if (cancelled) return;
-
-      const sessionsForTray = sessions.map((s) => {
-        const ws = s.workspaceId ? workspaces.find((w) => w.id === s.workspaceId) : undefined;
-        return {
-          id: s.id,
-          label: s.hostname,
-          hostLabel: s.hostLabel,
-          status: s.status,
-          workspaceId: s.workspaceId,
-          workspaceTitle: ws?.title,
-        };
-      });
-
+      if (lastTrayPayloadSignatureRef.current === trayPayloadSignature) {
+        return;
+      }
+      lastTrayPayloadSignatureRef.current = trayPayloadSignature;
+      const start = PERF_METRICS_ENABLED ? performance.now() : 0;
       void bridge.updateTrayMenuData({
         sessions: sessionsForTray,
         portForwardRules: portForwardingRules,
       });
+      if (PERF_METRICS_ENABLED) {
+        const elapsed = performance.now() - start;
+        console.debug(`[Perf] traySync ${sessionsForTray.length} sessions in ${elapsed.toFixed(2)}ms`);
+      }
     }, 250);
 
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [sessions, portForwardingRules, workspaces]);
+  }, [portForwardingRules, sessionsForTray, trayPayloadSignature]);
 
   useEffect(() => {
     const bridge = netcattyBridge.get();
@@ -1767,7 +1847,7 @@ function App({ settings }: { settings: SettingsState }) {
         orderedTabs={orderedTabs}
         draggingSessionId={draggingSessionId}
         isMacClient={isMacClient}
-        onCloseSession={closeSession}
+        onCloseSession={handleCloseSessionWithMetrics}
         onRenameSession={startSessionRename}
         onCopySession={copySessionWithCurrentShell}
         onRenameWorkspace={startWorkspaceRename}
@@ -1874,15 +1954,13 @@ function App({ settings }: { settings: SettingsState }) {
           onUpdateTerminalThemeId={setTerminalThemeId}
           onUpdateTerminalFontFamilyId={setTerminalFontFamilyId}
           onUpdateTerminalFontSize={setTerminalFontSize}
-          onUpdateTerminalFontWeight={(w) => updateTerminalSetting('fontWeight', w)}
-          onCloseSession={closeSession}
+          onUpdateTerminalFontWeight={handleUpdateTerminalFontWeight}
+          onCloseSession={handleCloseSessionWithMetrics}
           onUpdateSessionStatus={handleSessionStatusChange}
           onUpdateHostDistro={updateHostDistro}
-          onUpdateHost={(host) => updateHosts(hosts.map(h => h.id === host.id ? host : h))}
-          onAddKnownHost={(kh) => updateKnownHosts([...knownHosts, kh])}
-          onCommandExecuted={(command, hostId, hostLabel, sessionId) => {
-            addShellHistoryEntry({ command, hostId, hostLabel, sessionId });
-          }}
+          onUpdateHost={handleTerminalUpdateHost}
+          onAddKnownHost={handleTerminalAddKnownHost}
+          onCommandExecuted={handleTerminalCommandExecuted}
           onTerminalDataCapture={handleTerminalDataCapture}
           onCreateWorkspaceFromSessions={createWorkspaceFromSessions}
           onAddSessionToWorkspace={addSessionToWorkspace}
@@ -1912,7 +1990,7 @@ function App({ settings }: { settings: SettingsState }) {
         {/* Log Views - readonly terminal replays */}
         {logViews.map(logView => {
           // Get the latest log data from connectionLogs to reflect updates
-          const latestLog = connectionLogs.find(l => l.id === logView.connectionLogId) || logView.log;
+          const latestLog = connectionLogById.get(logView.connectionLogId) || logView.log;
           return (
             <LogViewWrapper
               key={logView.id}
@@ -1931,10 +2009,8 @@ function App({ settings }: { settings: SettingsState }) {
       <QuickAddSnippetDialog
         snippets={snippets}
         packages={snippetPackages}
-        onCreateSnippet={(snippet) => updateSnippets([...snippets, snippet])}
-        onCreatePackage={(pkg) =>
-          updateSnippetPackages(Array.from(new Set([...snippetPackages, pkg])))
-        }
+        onCreateSnippet={handleQuickCreateSnippet}
+        onCreatePackage={handleQuickCreateSnippetPackage}
       />
 
       {isQuickSwitcherOpen && (
@@ -2126,6 +2202,7 @@ function App({ settings }: { settings: SettingsState }) {
 
 function AppWithProviders() {
   const settings = useSettingsState();
+  const startupTsRef = useRef(PERF_METRICS_ENABLED ? performance.now() : 0);
 
   useEffect(() => {
     try {
@@ -2138,6 +2215,10 @@ function AppWithProviders() {
       }
       // Notify main process that renderer is ready
       netcattyBridge.get()?.rendererReady?.();
+      if (PERF_METRICS_ENABLED) {
+        const elapsed = performance.now() - startupTsRef.current;
+        console.debug(`[Perf] rendererReady ${elapsed.toFixed(2)}ms`);
+      }
     } catch {
       // ignore
     }

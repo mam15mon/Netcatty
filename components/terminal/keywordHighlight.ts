@@ -3,6 +3,7 @@ import { Terminal as XTerm, IDecoration, IDisposable, IMarker, IBufferLine } fro
 import { KeywordHighlightRule } from "../../types";
 
 import { XTERM_PERFORMANCE_CONFIG } from "../../infrastructure/config/xtermPerformance";
+import { forEachNonEmptyRegexMatch } from "./keywordHighlightRegex";
 
 /** Pre-compiled rule with regex ready for matching */
 interface CompiledRule {
@@ -14,6 +15,11 @@ interface CachedDecorationRange {
   x: number;
   width: number;
   color: string;
+}
+
+interface DirtyLineSegment {
+  start: number;
+  end: number;
 }
 
 interface LineDecorationState {
@@ -54,12 +60,26 @@ export class KeywordHighlighter implements IDisposable {
   private enabled: boolean = false;
   private disposables: IDisposable[] = [];
   private lastViewportY: number = -1;
+  private lastViewportRange: { start: number; end: number } | null = null;
   private lastRenderRange: { start: number; end: number } | null = null;
   private pendingRefreshReason: RefreshReason = "scroll";
-  private dirtyLines = new Set<number>();
+  private dirtySegments: DirtyLineSegment[] = [];
+  private dirtyLineCount = 0;
   private dirtyAllInRenderRange = false;
   private lastBufferSnapshot: BufferSnapshot | null = null;
+  private recentWriteBurst = 0;
+  private lastWriteAt = 0;
+  private lastBurstDecayAt = 0;
   private static readonly DIRTY_SCAN_PADDING = XTERM_PERFORMANCE_CONFIG.highlighting.dirtyScanPadding;
+  private static readonly WRITE_BURST_INTERVAL_MS = 28;
+  private static readonly WRITE_BURST_DECAY_MS = 80;
+  private static readonly WRITE_BURST_THRESHOLD = 6;
+  private static readonly WRITE_BURST_OVERSCAN_SCALE = 0.35;
+  private static readonly WRITE_BURST_BUDGET_SCALE = 0.5;
+  private static readonly WRITE_BURST_CHUNK_SCALE = 0.5;
+  private static readonly WRITE_BURST_DEBOUNCE_MS = 140;
+  private static readonly WRITE_BURST_IMMEDIATE_MIN_INTERVAL_MS = 32;
+  private static readonly WRITE_BURST_HIGHLIGHT_PAUSE_MS = 180;
 
   constructor(term: XTerm) {
     this.term = term;
@@ -158,8 +178,9 @@ export class KeywordHighlighter implements IDisposable {
       this.disposeLineDecorations(lineY, state);
     }
     this.lineDecorations.clear();
+    this.lastViewportRange = null;
     this.lastRenderRange = null;
-    this.dirtyLines.clear();
+    this.clearDirtySegments();
     this.dirtyAllInRenderRange = false;
   }
 
@@ -275,6 +296,23 @@ export class KeywordHighlighter implements IDisposable {
       return;
     }
 
+    const now = performance.now();
+    if (this.shouldDeferRefreshForWriteBurst(mode, reason, now)) {
+      if (this.animationFrameId !== null) {
+        cancelAnimationFrame(this.animationFrameId);
+        this.animationFrameId = null;
+      }
+      if (this.debounceTimer) {
+        clearTimeout(this.debounceTimer);
+      }
+      const delay = this.getWriteBurstDeferDelay(now);
+      this.debounceTimer = setTimeout(() => {
+        this.debounceTimer = null;
+        this.executeRefresh();
+      }, delay);
+      return;
+    }
+
     if (mode === "continuation") {
       if (this.animationFrameId !== null) {
         return;
@@ -298,8 +336,8 @@ export class KeywordHighlighter implements IDisposable {
         return;
       }
       const now = performance.now();
-      const minInterval = XTERM_PERFORMANCE_CONFIG.highlighting.immediateMinIntervalMs;
-      if (now - this.lastRefreshTime < minInterval) {
+      const minInterval = this.getAdaptiveHighlightingProfile(now).immediateMinIntervalMs;
+      if (reason !== "scroll" && now - this.lastRefreshTime < minInterval) {
         // Too soon — fall through to debounced path instead of dropping
         this.triggerRefresh("debounced", reason);
         return;
@@ -321,7 +359,7 @@ export class KeywordHighlighter implements IDisposable {
         this.debounceTimer = setTimeout(() => {
           this.debounceTimer = null;
           this.executeRefresh();
-        }, XTERM_PERFORMANCE_CONFIG.highlighting.debounceMs);
+        }, this.getAdaptiveHighlightingProfile().debounceMs);
       }
       return;
     }
@@ -334,7 +372,7 @@ export class KeywordHighlighter implements IDisposable {
       clearTimeout(this.debounceTimer);
     }
 
-    const delay = XTERM_PERFORMANCE_CONFIG.highlighting.debounceMs;
+    const delay = this.getAdaptiveHighlightingProfile().debounceMs;
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = null;
       this.executeRefresh();
@@ -344,6 +382,7 @@ export class KeywordHighlighter implements IDisposable {
   private refreshViewport(reason: RefreshReason) {
     // Safety check just in case
     if (!this.term?.buffer?.active) return;
+    this.reindexLineDecorationsFromMarkers();
 
     const buffer = this.term.buffer.active;
     const viewportY = buffer.viewportY;
@@ -351,19 +390,41 @@ export class KeywordHighlighter implements IDisposable {
     const cursorY = buffer.cursorY;
     const baseY = buffer.baseY;
     const cursorAbsoluteY = baseY + cursorY;
-    const overscan = XTERM_PERFORMANCE_CONFIG.highlighting.overscanLines;
+    const overscan = this.getOverscanLines(reason);
+    const viewportStart = viewportY;
+    const viewportEnd = viewportY + rows - 1;
     const rangeStart = Math.max(0, viewportY - overscan);
-    const rangeEnd = viewportY + rows - 1 + overscan;
+    const rangeEnd = viewportEnd + overscan;
 
     const previousRange = this.lastRenderRange;
-    const shouldIncrementalScroll =
-      reason === "scroll" &&
-      previousRange !== null &&
-      this.lineDecorations.size > 0;
+    const previousViewportRange = this.lastViewportRange;
 
     if (reason === "write") {
-      this.processDirtyLinesInRange(rangeStart, rangeEnd, cursorAbsoluteY);
-    } else if (shouldIncrementalScroll) {
+      this.processDirtyLinesInRange(rangeStart, rangeEnd, cursorAbsoluteY, "write");
+    } else if (reason === "scroll") {
+      const shouldIncrementalViewport =
+        previousViewportRange !== null &&
+        this.lineDecorations.size > 0 &&
+        viewportStart <= previousViewportRange.end &&
+        viewportEnd >= previousViewportRange.start;
+      if (!shouldIncrementalViewport) {
+        this.processLineRange(viewportStart, viewportEnd, cursorAbsoluteY);
+      } else {
+        if (viewportStart < previousViewportRange.start) {
+          this.processLineRange(viewportStart, Math.min(viewportEnd, previousViewportRange.start - 1), cursorAbsoluteY);
+        }
+        if (viewportEnd > previousViewportRange.end) {
+          this.processLineRange(Math.max(viewportStart, previousViewportRange.end + 1), viewportEnd, cursorAbsoluteY);
+        }
+      }
+      if (rangeStart < viewportStart) {
+        this.addDirtyRange(rangeStart, viewportStart - 1);
+      }
+      if (rangeEnd > viewportEnd) {
+        this.addDirtyRange(viewportEnd + 1, rangeEnd);
+      }
+      this.processDirtyLinesInRange(rangeStart, rangeEnd, cursorAbsoluteY, "scroll");
+    } else if (previousRange !== null && this.lineDecorations.size > 0) {
       if (rangeStart < previousRange.start) {
         this.processLineRange(rangeStart, Math.min(rangeEnd, previousRange.start - 1), cursorAbsoluteY);
       }
@@ -375,59 +436,84 @@ export class KeywordHighlighter implements IDisposable {
     }
 
     for (const [lineY, state] of this.lineDecorations) {
-      if (lineY < rangeStart || lineY > rangeEnd || state.marker.isDisposed || state.marker.line !== lineY) {
+      if (lineY < rangeStart || lineY > rangeEnd || state.marker.isDisposed) {
         this.disposeLineDecorations(lineY, state);
       }
     }
 
+    this.lastViewportRange = { start: viewportStart, end: viewportEnd };
     this.lastRenderRange = { start: rangeStart, end: rangeEnd };
   }
 
-  private processDirtyLinesInRange(rangeStart: number, rangeEnd: number, cursorAbsoluteY: number) {
+  private reindexLineDecorationsFromMarkers() {
+    if (this.lineDecorations.size === 0) return;
+    const entries = Array.from(this.lineDecorations.entries());
+    for (const [lineY, state] of entries) {
+      if (state.marker.isDisposed || state.marker.line < 0) {
+        this.disposeLineDecorations(lineY, state);
+        continue;
+      }
+      const markerLine = state.marker.line;
+      if (markerLine === lineY) continue;
+      this.lineDecorations.delete(lineY);
+      const existing = this.lineDecorations.get(markerLine);
+      if (existing && existing !== state) {
+        this.disposeLineDecorations(markerLine, existing);
+      }
+      this.lineDecorations.set(markerLine, state);
+    }
+  }
+
+  private processDirtyLinesInRange(
+    rangeStart: number,
+    rangeEnd: number,
+    cursorAbsoluteY: number,
+    continuationReason: RefreshReason
+  ) {
     if (this.dirtyAllInRenderRange) {
       this.processLineRange(rangeStart, rangeEnd, cursorAbsoluteY);
       this.dirtyAllInRenderRange = false;
-      this.dirtyLines.clear();
+      this.clearDirtySegments();
       return;
     }
 
-    if (this.dirtyLines.size === 0) {
+    if (this.dirtySegments.length === 0) {
       return;
     }
 
-    const dirtyInRange = Array.from(this.dirtyLines)
-      .filter((lineY) => lineY >= rangeStart && lineY <= rangeEnd)
-      .sort((a, b) => a - b);
+    const dirtyInRange: DirtyLineSegment[] = [];
+    for (const segment of this.dirtySegments) {
+      if (segment.end < rangeStart) continue;
+      if (segment.start > rangeEnd) break;
+      dirtyInRange.push({
+        start: Math.max(segment.start, rangeStart),
+        end: Math.min(segment.end, rangeEnd),
+      });
+    }
+
     if (dirtyInRange.length === 0) {
       return;
     }
 
-    const refreshBudgetMs = XTERM_PERFORMANCE_CONFIG.highlighting.writeRefreshBudgetMs;
-    const segmentChunkSize = Math.max(1, XTERM_PERFORMANCE_CONFIG.highlighting.dirtySegmentChunkSize);
+    const { writeRefreshBudgetMs, dirtySegmentChunkSize } = this.getAdaptiveHighlightingProfile();
+    const segmentChunkSize = Math.max(1, dirtySegmentChunkSize);
     const startTime = performance.now();
 
-    let index = 0;
-    while (index < dirtyInRange.length) {
-      const segmentStart = dirtyInRange[index];
-      let segmentEnd = segmentStart;
-      index += 1;
+    for (const segment of dirtyInRange) {
+      let chunkStart = segment.start;
+      while (chunkStart <= segment.end) {
+        const chunkEnd = Math.min(segment.end, chunkStart + segmentChunkSize - 1);
+        this.processLineRange(chunkStart, chunkEnd, cursorAbsoluteY);
+        this.removeDirtyRange(chunkStart, chunkEnd);
+        chunkStart = chunkEnd + 1;
 
-      while (
-        index < dirtyInRange.length &&
-        dirtyInRange[index] === segmentEnd + 1 &&
-        segmentEnd - segmentStart + 1 < segmentChunkSize
-      ) {
-        segmentEnd = dirtyInRange[index];
-        index += 1;
+        if (chunkStart <= segment.end && performance.now() - startTime >= writeRefreshBudgetMs) {
+          this.triggerRefresh("continuation", continuationReason);
+          return;
+        }
       }
-
-      this.processLineRange(segmentStart, segmentEnd, cursorAbsoluteY);
-      for (let lineY = segmentStart; lineY <= segmentEnd; lineY++) {
-        this.dirtyLines.delete(lineY);
-      }
-
-      if (index < dirtyInRange.length && performance.now() - startTime >= refreshBudgetMs) {
-        this.triggerRefresh("continuation", "write");
+      if (performance.now() - startTime >= writeRefreshBudgetMs) {
+        this.triggerRefresh("continuation", continuationReason);
         return;
       }
     }
@@ -451,10 +537,45 @@ export class KeywordHighlighter implements IDisposable {
 
   private markVisibleRangeDirty() {
     this.dirtyAllInRenderRange = true;
-    this.dirtyLines.clear();
+    this.clearDirtySegments();
+  }
+
+  private clearDirtySegments() {
+    this.dirtySegments = [];
+    this.dirtyLineCount = 0;
+  }
+
+  private rebuildDirtyLineCount() {
+    let total = 0;
+    for (const segment of this.dirtySegments) {
+      total += segment.end - segment.start + 1;
+    }
+    this.dirtyLineCount = total;
+  }
+
+  private removeDirtyRange(start: number, end: number) {
+    if (end < start || this.dirtySegments.length === 0) return;
+    const next: DirtyLineSegment[] = [];
+
+    for (const segment of this.dirtySegments) {
+      if (segment.end < start || segment.start > end) {
+        next.push(segment);
+        continue;
+      }
+      if (segment.start < start) {
+        next.push({ start: segment.start, end: start - 1 });
+      }
+      if (segment.end > end) {
+        next.push({ start: end + 1, end: segment.end });
+      }
+    }
+
+    this.dirtySegments = next;
+    this.rebuildDirtyLineCount();
   }
 
   private addDirtyRange(start: number, end: number) {
+    if (this.dirtyAllInRenderRange) return;
     if (end < start) return;
     const maxDirtyLines = this.getMaxDirtyLines();
     const clampedStart = Math.max(0, start);
@@ -464,12 +585,36 @@ export class KeywordHighlighter implements IDisposable {
       this.markVisibleRangeDirty();
       return;
     }
-    for (let lineY = clampedStart; lineY <= clampedEnd; lineY++) {
-      this.dirtyLines.add(lineY);
-      if (this.dirtyLines.size > maxDirtyLines) {
-        this.markVisibleRangeDirty();
-        return;
+    const merged: DirtyLineSegment[] = [];
+    let mergeStart = clampedStart;
+    let mergeEnd = clampedEnd;
+    let inserted = false;
+
+    for (const segment of this.dirtySegments) {
+      if (segment.end + 1 < mergeStart) {
+        merged.push(segment);
+        continue;
       }
+      if (mergeEnd + 1 < segment.start) {
+        if (!inserted) {
+          merged.push({ start: mergeStart, end: mergeEnd });
+          inserted = true;
+        }
+        merged.push(segment);
+        continue;
+      }
+      mergeStart = Math.min(mergeStart, segment.start);
+      mergeEnd = Math.max(mergeEnd, segment.end);
+    }
+
+    if (!inserted) {
+      merged.push({ start: mergeStart, end: mergeEnd });
+    }
+
+    this.dirtySegments = merged;
+    this.rebuildDirtyLineCount();
+    if (this.dirtyLineCount > maxDirtyLines) {
+      this.markVisibleRangeDirty();
     }
   }
 
@@ -483,6 +628,7 @@ export class KeywordHighlighter implements IDisposable {
   }
 
   private markDirtyFromWrite() {
+    this.updateWriteBurst();
     const snapshot = this.readBufferSnapshot();
     if (!snapshot) {
       this.markVisibleRangeDirty();
@@ -531,6 +677,100 @@ export class KeywordHighlighter implements IDisposable {
         this.addDirtyRange(snapshot.viewportY - padding, prev.viewportY - 1 + padding);
       }
     }
+  }
+
+  private decayWriteBurst(now: number) {
+    if (this.lastBurstDecayAt === 0) {
+      this.lastBurstDecayAt = now;
+      return;
+    }
+    const elapsed = now - this.lastBurstDecayAt;
+    if (elapsed < KeywordHighlighter.WRITE_BURST_DECAY_MS) return;
+    const steps = Math.floor(elapsed / KeywordHighlighter.WRITE_BURST_DECAY_MS);
+    if (steps <= 0) return;
+    this.recentWriteBurst = Math.max(0, this.recentWriteBurst - steps);
+    this.lastBurstDecayAt += steps * KeywordHighlighter.WRITE_BURST_DECAY_MS;
+  }
+
+  private updateWriteBurst() {
+    const now = performance.now();
+    this.decayWriteBurst(now);
+    if (this.lastWriteAt === 0) {
+      this.recentWriteBurst = 1;
+      this.lastWriteAt = now;
+      this.lastBurstDecayAt = now;
+      return;
+    }
+
+    const interval = now - this.lastWriteAt;
+    if (interval <= KeywordHighlighter.WRITE_BURST_INTERVAL_MS) {
+      this.recentWriteBurst = Math.min(64, this.recentWriteBurst + 1);
+    } else {
+      this.recentWriteBurst = Math.max(1, this.recentWriteBurst - 1);
+    }
+    this.lastWriteAt = now;
+    this.lastBurstDecayAt = now;
+  }
+
+  private isWriteBurstActive(now: number): boolean {
+    this.decayWriteBurst(now);
+    if (this.recentWriteBurst < KeywordHighlighter.WRITE_BURST_THRESHOLD) {
+      return false;
+    }
+    return now - this.lastWriteAt <= KeywordHighlighter.WRITE_BURST_DECAY_MS * 2;
+  }
+
+  private getAdaptiveHighlightingProfile(now = performance.now()) {
+    const config = XTERM_PERFORMANCE_CONFIG.highlighting;
+    if (!this.isWriteBurstActive(now)) {
+      return {
+        overscanLines: config.overscanLines,
+        writeRefreshBudgetMs: config.writeRefreshBudgetMs,
+        dirtySegmentChunkSize: config.dirtySegmentChunkSize,
+        debounceMs: config.debounceMs,
+        immediateMinIntervalMs: config.immediateMinIntervalMs,
+      };
+    }
+
+    return {
+      overscanLines: Math.max(8, Math.round(config.overscanLines * KeywordHighlighter.WRITE_BURST_OVERSCAN_SCALE)),
+      writeRefreshBudgetMs: Math.max(1, config.writeRefreshBudgetMs * KeywordHighlighter.WRITE_BURST_BUDGET_SCALE),
+      dirtySegmentChunkSize: Math.max(8, Math.round(config.dirtySegmentChunkSize * KeywordHighlighter.WRITE_BURST_CHUNK_SCALE)),
+      debounceMs: Math.max(config.debounceMs, KeywordHighlighter.WRITE_BURST_DEBOUNCE_MS),
+      immediateMinIntervalMs: Math.max(
+        config.immediateMinIntervalMs,
+        KeywordHighlighter.WRITE_BURST_IMMEDIATE_MIN_INTERVAL_MS
+      ),
+    };
+  }
+
+  private shouldDeferRefreshForWriteBurst(
+    mode: "immediate" | "debounced" | "continuation",
+    reason: RefreshReason,
+    now: number
+  ): boolean {
+    if (mode !== "immediate") return false;
+    if (!this.isWriteBurstActive(now)) return false;
+    return reason === "write";
+  }
+
+  private getOverscanLines(reason: RefreshReason): number {
+    if (reason === "write") {
+      return this.getAdaptiveHighlightingProfile().overscanLines;
+    }
+    return XTERM_PERFORMANCE_CONFIG.highlighting.overscanLines;
+  }
+
+  private getWriteBurstDeferDelay(now: number): number {
+    const quietWindow = Math.max(
+      KeywordHighlighter.WRITE_BURST_HIGHLIGHT_PAUSE_MS,
+      this.getAdaptiveHighlightingProfile(now).debounceMs
+    );
+    if (this.lastWriteAt <= 0) {
+      return quietWindow;
+    }
+    const elapsedSinceWrite = now - this.lastWriteAt;
+    return Math.max(16, quietWindow - elapsedSinceWrite);
   }
 
   private processLineRange(start: number, end: number, cursorAbsoluteY: number) {
@@ -603,11 +843,7 @@ export class KeywordHighlighter implements IDisposable {
 
     // Process each pre-compiled rule
     for (const { regex, color } of this.compiledRules) {
-      // Reset regex state for reuse (global flag maintains lastIndex)
-      regex.lastIndex = 0;
-      let match;
-
-      while ((match = regex.exec(lineText)) !== null) {
+      forEachNonEmptyRegexMatch(regex, lineText, (match) => {
         const strStart = match.index;
         const strEnd = strStart + match[0].length;
 
@@ -629,7 +865,7 @@ export class KeywordHighlighter implements IDisposable {
         const cellWidth = cellEndCol - cellStartCol;
 
         // Skip if width is 0 or negative (shouldn't happen, but be safe)
-        if (cellWidth <= 0) continue;
+        if (cellWidth <= 0) return;
 
         if (ranges === null) {
           ranges = [];
@@ -639,9 +875,36 @@ export class KeywordHighlighter implements IDisposable {
           width: cellWidth,
           color,
         });
+      });
+    }
+
+    if (!ranges || ranges.length === 0) {
+      return EMPTY_RANGES as CachedDecorationRange[];
+    }
+    if (ranges.length === 1) {
+      return ranges;
+    }
+    return this.mergeDecorationRanges(ranges);
+  }
+
+  private mergeDecorationRanges(ranges: CachedDecorationRange[]): CachedDecorationRange[] {
+    const merged: CachedDecorationRange[] = [ranges[0]];
+
+    for (let index = 1; index < ranges.length; index += 1) {
+      const current = ranges[index];
+      const previous = merged[merged.length - 1];
+      if (
+        current.color === previous.color &&
+        current.x >= previous.x &&
+        current.x <= previous.x + previous.width
+      ) {
+        const mergedEnd = Math.max(previous.x + previous.width, current.x + current.width);
+        previous.width = mergedEnd - previous.x;
+      } else {
+        merged.push(current);
       }
     }
 
-    return ranges ?? (EMPTY_RANGES as CachedDecorationRange[]);
+    return merged;
   }
 }

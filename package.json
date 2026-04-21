@@ -28,6 +28,7 @@
     "postinstall": "electron-builder install-app-deps && patch-package",
     "rebuild": "electron-builder install-app-deps",
     "tool:cli": "node electron/cli/netcatty-tool-cli.cjs",
+    "perf:baseline": "node scripts/perf-baseline.cjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test": "node --test --import tsx electron/bridges/*.test.cjs electron/bridges/*/*.test.cjs application/state/*.test.ts components/ai/*.test.ts components/terminal/*.test.ts domain/*.test.ts infrastructure/ai/*.test.ts"

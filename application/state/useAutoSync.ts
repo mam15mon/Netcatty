@@ -48,6 +48,23 @@ interface AutoSyncConfig {
 // Get manager singleton for direct state access
 const manager = getCloudSyncManager();
 const AUTO_SYNC_PROVIDER_ORDER: CloudProvider[] = ['github', 'google', 'onedrive', 'webdav', 's3'];
+const AUTO_SYNC_PERF_ENABLED =
+  import.meta.env.DEV &&
+  localStorageAdapter.readString('netcatty_perf_metrics') === '1';
+const payloadRefIdentityMap = new WeakMap<object, number>();
+let payloadRefIdentityCounter = 1;
+
+const getRefIdentity = (value: unknown): string => {
+  if (value === null || value === undefined) return 'null';
+  if (typeof value !== 'object') return String(value);
+  const obj = value as object;
+  let existing = payloadRefIdentityMap.get(obj);
+  if (!existing) {
+    existing = payloadRefIdentityCounter++;
+    payloadRefIdentityMap.set(obj, existing);
+  }
+  return `r${existing}`;
+};
 
 // Cross-window restore barrier: stored as an epoch-ms deadline. Any value
 // in the future means a restore is applying in some window and auto-sync
@@ -149,10 +166,33 @@ export const useAutoSync = (config: AutoSyncConfig) => {
     };
   }, [getSyncSnapshot]);
   
-  // Create a hash of current data for comparison (includes settings)
-  const getDataHash = useCallback(() => {
-    return JSON.stringify({ ...getSyncSnapshot(), settings: collectSyncableSettings() });
-  }, [getSyncSnapshot]);
+  const getDataFingerprint = useCallback(() => {
+    return [
+      getRefIdentity(config.hosts),
+      getRefIdentity(config.keys),
+      getRefIdentity(config.identities),
+      getRefIdentity(config.snippets),
+      getRefIdentity(config.customGroups),
+      getRefIdentity(config.snippetPackages),
+      getRefIdentity(config.portForwardingRules),
+      getRefIdentity(config.knownHosts),
+      getRefIdentity(config.groupConfigs),
+      `settings:${config.settingsVersion ?? 0}`,
+      `bookmarks:${bookmarksVersion}`,
+    ].join('|');
+  }, [
+    bookmarksVersion,
+    config.customGroups,
+    config.groupConfigs,
+    config.hosts,
+    config.identities,
+    config.keys,
+    config.knownHosts,
+    config.portForwardingRules,
+    config.settingsVersion,
+    config.snippetPackages,
+    config.snippets,
+  ]);
   
   // Sync now handler - get fresh state directly from manager
   const syncNow = useCallback(async (options?: SyncNowOptions) => {
@@ -239,7 +279,7 @@ export const useAutoSync = (config: AutoSyncConfig) => {
         throw new Error(t('sync.autoSync.vaultLocked'));
       }
 
-      const dataHash = getDataHash();
+      const dataFingerprint = getDataFingerprint();
       const payload = buildPayload();
       const encryptedCredentialPaths = findSyncPayloadEncryptedCredentialPaths(payload);
       if (encryptedCredentialPaths.length > 0) {
@@ -287,7 +327,7 @@ export const useAutoSync = (config: AutoSyncConfig) => {
         }
       }
 
-      lastSyncedDataRef.current = dataHash;
+      lastSyncedDataRef.current = dataFingerprint;
 
       // Successful sync implies a successful per-provider
       // `checkProviderConflict` (which inspects remote) — equivalent
@@ -312,7 +352,7 @@ export const useAutoSync = (config: AutoSyncConfig) => {
     } finally {
       isSyncRunningRef.current = false;
     }
-  }, [sync, buildPayload, getDataHash, onApplyPayload, t]);
+  }, [sync, buildPayload, getDataFingerprint, onApplyPayload, t]);
 
   // One-shot toast per mount when a previous apply was interrupted, so the
   // user understands why auto-sync is silently paused and where to go to
@@ -558,11 +598,11 @@ export const useAutoSync = (config: AutoSyncConfig) => {
     // Skip initial render
     if (!isInitializedRef.current) {
       isInitializedRef.current = true;
-      lastSyncedDataRef.current = getDataHash();
+      lastSyncedDataRef.current = getDataFingerprint();
       return;
     }
     
-    const currentHash = getDataHash();
+    const currentHash = getDataFingerprint();
 
     // After a merge, onApplyPayload changes local state which triggers
     // this effect. Skip that cycle and just update the hash baseline.
@@ -606,7 +646,12 @@ export const useAutoSync = (config: AutoSyncConfig) => {
     }
     
     // Debounce sync by 3 seconds
+    const scheduleStartedAt = AUTO_SYNC_PERF_ENABLED ? performance.now() : 0;
     syncTimeoutRef.current = setTimeout(() => {
+      if (AUTO_SYNC_PERF_ENABLED) {
+        const elapsed = performance.now() - scheduleStartedAt;
+        console.debug(`[Perf] autosyncDebounce fired after ${elapsed.toFixed(2)}ms`);
+      }
       syncNow();
     }, 3000);
     
@@ -615,7 +660,7 @@ export const useAutoSync = (config: AutoSyncConfig) => {
         clearTimeout(syncTimeoutRef.current);
       }
     };
-  }, [sync.hasAnyConnectedProvider, sync.autoSyncEnabled, sync.isUnlocked, sync.isSyncing, getDataHash, syncNow, config.settingsVersion, bookmarksVersion]);
+  }, [sync.hasAnyConnectedProvider, sync.autoSyncEnabled, sync.isUnlocked, sync.isSyncing, getDataFingerprint, syncNow, config.settingsVersion, bookmarksVersion]);
   
   // Check remote version on startup/unlock, then retry with backoff
   // while the inspect keeps failing. Without the timer-based retry,

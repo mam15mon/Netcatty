@@ -37,6 +37,13 @@ export const useSessionState = () => {
   const [broadcastWorkspaceIds, setBroadcastWorkspaceIds] = useState<Set<string>>(new Set());
   // Log views: stores open log replay tabs
   const [logViews, setLogViews] = useState<LogView[]>([]);
+  const buildEffectiveTabOrder = useCallback((prevTabOrder: string[], allTabIds: string[]) => {
+    const allTabIdSet = new Set(allTabIds);
+    const orderedIds = prevTabOrder.filter((id) => allTabIdSet.has(id));
+    const orderedIdSet = new Set(orderedIds);
+    const newIds = allTabIds.filter((id) => !orderedIdSet.has(id));
+    return [...orderedIds, ...newIds];
+  }, []);
 
   const createLocalTerminal = useCallback((options?: {
     shellType?: TerminalSession['shellType'];
@@ -176,12 +183,14 @@ export const useSessionState = () => {
     setSessions(prevSessions => {
       const targetSession = prevSessions.find(s => s.id === sessionId);
       const wsId = targetSession?.workspaceId;
+      let dissolvedRemainingSessionId: string | null = null;
 
       setWorkspaces(prevWorkspaces => {
         let removedWorkspaceId: string | null = null;
         let nextWorkspaces = prevWorkspaces;
         let dissolvedWorkspaceId: string | null = null;
         let lastRemainingSessionId: string | null = null;
+        let workspaceStillExists = true;
 
         if (wsId) {
           nextWorkspaces = prevWorkspaces
@@ -190,6 +199,7 @@ export const useSessionState = () => {
               const pruned = pruneWorkspaceNode(ws.root, sessionId);
               if (!pruned) {
                 removedWorkspaceId = ws.id;
+                workspaceStillExists = false;
                 return null;
               }
 
@@ -198,6 +208,8 @@ export const useSessionState = () => {
               if (remainingSessionIds.length === 1) {
                 dissolvedWorkspaceId = ws.id;
                 lastRemainingSessionId = remainingSessionIds[0];
+                dissolvedRemainingSessionId = remainingSessionIds[0];
+                workspaceStillExists = false;
                 return null;
               }
 
@@ -208,7 +220,10 @@ export const useSessionState = () => {
 
         const remainingSessions = prevSessions.filter(s => s.id !== sessionId);
         const fallbackWorkspace = nextWorkspaces[nextWorkspaces.length - 1];
-        const fallbackSolo = remainingSessions.filter(s => !s.workspaceId).slice(-1)[0];
+        let fallbackSolo: TerminalSession | undefined;
+        for (let i = 0; i < remainingSessions.length; i += 1) {
+          if (!remainingSessions[i].workspaceId) fallbackSolo = remainingSessions[i];
+        }
 
         const currentActiveTabId = activeTabStore.getActiveTabId();
         const getFallback = () => {
@@ -224,28 +239,17 @@ export const useSessionState = () => {
           setActiveTabId(getFallback());
         } else if (removedWorkspaceId && currentActiveTabId === removedWorkspaceId) {
           setActiveTabId(getFallback());
-        } else if (wsId && currentActiveTabId === wsId && !nextWorkspaces.find(w => w.id === wsId)) {
+        } else if (wsId && currentActiveTabId === wsId && !workspaceStillExists) {
           setActiveTabId(getFallback());
         }
 
         return nextWorkspaces;
       });
 
-      // Check if we need to dissolve a workspace (convert remaining session to orphan)
-      if (targetSession?.workspaceId) {
-        const ws = workspaces.find(w => w.id === targetSession.workspaceId);
-        if (ws) {
-          const pruned = pruneWorkspaceNode(ws.root, sessionId);
-          if (pruned) {
-            const remainingSessionIds = collectSessionIds(pruned);
-            if (remainingSessionIds.length === 1) {
-              // Dissolve: remove workspaceId from the remaining session
-              return prevSessions
-                .filter(s => s.id !== sessionId)
-                .map(s => remainingSessionIds.includes(s.id) ? { ...s, workspaceId: undefined } : s);
-            }
-          }
-        }
+      if (dissolvedRemainingSessionId) {
+        return prevSessions
+          .filter((s) => s.id !== sessionId)
+          .map((s) => (s.id === dissolvedRemainingSessionId ? { ...s, workspaceId: undefined } : s));
       }
 
       return prevSessions.filter(s => s.id !== sessionId);
@@ -254,7 +258,7 @@ export const useSessionState = () => {
     if (workspaceIdToMaybeClose) {
       queueMicrotask(() => closeWorkspace(workspaceIdToMaybeClose!));
     }
-  }, [sessions, workspaces, setActiveTabId, closeWorkspace]);
+  }, [sessions, setActiveTabId, closeWorkspace]);
 
   const startSessionRename = useCallback((sessionId: string) => {
     setSessions(prevSessions => {
@@ -720,11 +724,7 @@ export const useSessionState = () => {
           ...workspaces.map(w => w.id),
           ...logViews.map(lv => lv.id),
         ];
-        const allTabIdSet = new Set(allTabIds);
-        const orderedIds = prevTabOrder.filter(id => allTabIdSet.has(id));
-        const orderedIdSet = new Set(orderedIds);
-        const newIds = allTabIds.filter(id => !orderedIdSet.has(id));
-        const currentOrder = [...orderedIds, ...newIds];
+        const currentOrder = buildEffectiveTabOrder(prevTabOrder, allTabIds);
         const sourceIdx = currentOrder.indexOf(sessionId);
         if (sourceIdx === -1) return [...prevTabOrder, newSessionId];
         const next = [...currentOrder];
@@ -734,7 +734,7 @@ export const useSessionState = () => {
 
       return [...prevSessions, newSession];
     });
-  }, [orphanSessions, workspaces, logViews, setActiveTabId]);
+  }, [orphanSessions, workspaces, logViews, setActiveTabId, buildEffectiveTabOrder]);
 
   // Toggle broadcast mode for a workspace
   const toggleBroadcast = useCallback((workspaceId: string) => {
@@ -755,37 +755,19 @@ export const useSessionState = () => {
   }, [broadcastWorkspaceIds]);
 
   // Get ordered tabs: combines orphan sessions, workspaces, and log views in the custom order
-  const orderedTabs = useMemo(() => {
-    const allTabIds = [
-      ...orphanSessions.map(s => s.id),
-      ...workspaces.map(w => w.id),
-      ...logViews.map(lv => lv.id),
-    ];
-    const allTabIdSet = new Set(allTabIds);
-    // Filter tabOrder to only include existing tabs, then add any new tabs at the end
-    const orderedIds = tabOrder.filter(id => allTabIdSet.has(id));
-    const orderedIdSet = new Set(orderedIds);
-    const newIds = allTabIds.filter(id => !orderedIdSet.has(id));
-    return [...orderedIds, ...newIds];
-  }, [orphanSessions, workspaces, logViews, tabOrder]);
+  const allTabIds = useMemo(() => [
+    ...orphanSessions.map(s => s.id),
+    ...workspaces.map(w => w.id),
+    ...logViews.map(lv => lv.id),
+  ], [orphanSessions, workspaces, logViews]);
+
+  const orderedTabs = useMemo(() => buildEffectiveTabOrder(tabOrder, allTabIds), [tabOrder, allTabIds, buildEffectiveTabOrder]);
 
   const reorderTabs = useCallback((draggedId: string, targetId: string, position: 'before' | 'after' = 'before') => {
     if (draggedId === targetId) return;
     
     setTabOrder(prevTabOrder => {
-      // Get all current tab IDs (orphan sessions + workspaces + log views)
-      const allTabIds = [
-        ...orphanSessions.map(s => s.id),
-        ...workspaces.map(w => w.id),
-        ...logViews.map(lv => lv.id),
-      ];
-      const allTabIdSet = new Set(allTabIds);
-      
-      // Build current effective order: existing order + new tabs at end
-      const orderedIds = prevTabOrder.filter(id => allTabIdSet.has(id));
-      const orderedIdSet = new Set(orderedIds);
-      const newIds = allTabIds.filter(id => !orderedIdSet.has(id));
-      const currentOrder = [...orderedIds, ...newIds];
+      const currentOrder = buildEffectiveTabOrder(prevTabOrder, allTabIds);
       
       const draggedIndex = currentOrder.indexOf(draggedId);
       const targetIndex = currentOrder.indexOf(targetId);
@@ -810,7 +792,7 @@ export const useSessionState = () => {
       
       return currentOrder;
     });
-  }, [orphanSessions, workspaces, logViews]);
+  }, [allTabIds, buildEffectiveTabOrder]);
 
   return {
     sessions,

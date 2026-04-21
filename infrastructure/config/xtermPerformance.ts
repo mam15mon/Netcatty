@@ -104,7 +104,7 @@ export const XTERM_PERFORMANCE_CONFIG = {
     cacheEntries: 1200,
     // Keep decorations for lines just outside the viewport so small scrolls
     // don't constantly dispose/recreate them.
-    overscanLines: 60,
+    overscanLines: 100,
     // Dirty scan padding around cursor/viewport deltas for write bursts.
     dirtyScanPadding: 2,
     // Dynamic dirty-line cap scales with viewport rows.
