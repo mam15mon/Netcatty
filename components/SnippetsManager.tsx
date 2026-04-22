@@ -100,6 +100,16 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
   const [isRecordingShortkey, setIsRecordingShortkey] = useState(false);
   const [shortkeyError, setShortkeyError] = useState<string | null>(null);
 
+  useEffect(() => {
+    const handler = () => {
+      setSelectedPackage(null);
+      setNewPackageName('');
+      setIsPackageDialogOpen(true);
+    };
+    window.addEventListener('netcatty:snippets:open-new-package-dialog', handler);
+    return () => window.removeEventListener('netcatty:snippets:open-new-package-dialog', handler);
+  }, []);
+
   const existingShortkeys = useMemo(() => (
     snippets.filter(s => Boolean(s.shortkey) && s.id !== editingSnippet.id)
   ), [snippets, editingSnippet.id]);

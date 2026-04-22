@@ -1834,6 +1834,30 @@ function App({ settings }: { settings: SettingsState }) {
     return () => window.removeEventListener('netcatty:snippets:delete', handler);
   }, [snippets, updateSnippets]);
 
+  useEffect(() => {
+    const handler = () => {
+      setNavigateToSection('snippets');
+    };
+    window.addEventListener('netcatty:snippets:manage', handler);
+    return () => window.removeEventListener('netcatty:snippets:manage', handler);
+  }, []);
+
+  useEffect(() => {
+    const timeoutIds: number[] = [];
+    const handler = () => {
+      setNavigateToSection('snippets');
+      const timer = window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('netcatty:snippets:open-new-package-dialog'));
+      }, 120);
+      timeoutIds.push(timer);
+    };
+    window.addEventListener('netcatty:snippets:new-package', handler);
+    return () => {
+      window.removeEventListener('netcatty:snippets:new-package', handler);
+      timeoutIds.forEach((id) => window.clearTimeout(id));
+    };
+  }, []);
+
   const handleEndSessionDrag = useCallback(() => {
     setDraggingSessionId(null);
   }, [setDraggingSessionId]);

@@ -17,6 +17,7 @@ import {
     ContextMenu,
     ContextMenuContent,
     ContextMenuItem,
+    ContextMenuSeparator,
     ContextMenuTrigger,
 } from '../ui/context-menu';
 
@@ -182,6 +183,14 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
         window.dispatchEvent(new CustomEvent('netcatty:snippets:add'));
     }, []);
 
+    const handleManageSnippets = useCallback(() => {
+        window.dispatchEvent(new CustomEvent('netcatty:snippets:manage'));
+    }, []);
+
+    const handleNewPackage = useCallback(() => {
+        window.dispatchEvent(new CustomEvent('netcatty:snippets:new-package'));
+    }, []);
+
     const [composeHeight, setComposeHeight, persistComposeHeight] = useStoredNumber(
         STORAGE_KEY_TERM_COMPOSE_BAR_HEIGHT,
         120,
@@ -252,113 +261,143 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                 onMouseDown={startResizing}
             />
 
-            <div
-                className="flex items-center h-8 px-3 gap-2"
-                style={{
-                    backgroundColor: `color-mix(in srgb, ${resolvedFg} 5%, transparent)`,
-                }}
-            >
-                <Select
-                    value={selectedPackage || allPackagesValue}
-                    onValueChange={(value) => setSelectedPackage(value === allPackagesValue ? '' : value)}
-                >
-                    <SelectTrigger className="h-6 w-auto px-2 bg-black/20 border-border/20 hover:bg-white/5 transition-colors gap-1.5 focus:ring-0 focus:ring-offset-0 text-[10px] font-medium tracking-wide flex items-center [&>span]:translate-y-[1.5px]">
-                        <SelectValue placeholder={getLabel('snippets.breadcrumb.allPackages', 'All Packages')} />
-                    </SelectTrigger>
-                    <SelectContent className="bg-background border-border/30 z-[1000]">
-                        <SelectItem value={allPackagesValue} className="text-[10px] font-medium tracking-wide">
-                            {getLabel('snippets.breadcrumb.allPackages', 'All Packages')}
-                        </SelectItem>
-                        {packageOptions.map((item) => (
-                            <SelectItem key={item} value={item} className="text-[10px] font-medium tracking-wide">
-                                {item}
-                            </SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
-
-                <div className="w-px h-3 bg-border/40 mx-1" />
-                <div className="flex-1" />
-
-                <div className="flex items-center gap-1">
-                    <button
-                        type="button"
-                        onClick={handleAddSnippet}
-                        className="h-6 w-6 flex items-center justify-center rounded hover:bg-white/5 transition-all opacity-70"
-                        title={getLabel('snippets.action.newSnippet', 'New Snippet')}
+            <ContextMenu>
+                <ContextMenuTrigger asChild>
+                    <div
+                        className="flex items-center h-8 px-3 gap-2"
+                        style={{
+                            backgroundColor: `color-mix(in srgb, ${resolvedFg} 5%, transparent)`,
+                        }}
                     >
-                        <Plus size={14} />
-                    </button>
-                    {showBroadcastToggle && (
-                        <button
-                            onClick={onToggleBroadcast}
-                            className={cn(
-                                "h-6 px-2 flex items-center gap-1.5 rounded transition-all",
-                                isBroadcastEnabled ? "bg-amber-500/10 text-amber-500" : "hover:bg-white/5 opacity-60"
-                            )}
+                        <Select
+                            value={selectedPackage || allPackagesValue}
+                            onValueChange={(value) => setSelectedPackage(value === allPackagesValue ? '' : value)}
                         >
-                            <Radio size={12} className={cn(isBroadcastEnabled && "animate-pulse")} />
-                            <span className="text-[10px] font-bold uppercase tracking-wider">Broadcast</span>
-                        </button>
-                    )}
+                            <SelectTrigger className="h-6 w-auto px-2 bg-black/20 border-border/20 hover:bg-white/5 transition-colors gap-1.5 focus:ring-0 focus:ring-offset-0 text-[10px] font-medium tracking-wide flex items-center [&>span]:translate-y-[1.5px]">
+                                <SelectValue placeholder={getLabel('snippets.breadcrumb.allPackages', 'All Packages')} />
+                            </SelectTrigger>
+                            <SelectContent className="bg-background border-border/30 z-[1000]">
+                                <SelectItem value={allPackagesValue} className="text-[10px] font-medium tracking-wide">
+                                    {getLabel('snippets.breadcrumb.allPackages', 'All Packages')}
+                                </SelectItem>
+                                {packageOptions.map((item) => (
+                                    <SelectItem key={item} value={item} className="text-[10px] font-medium tracking-wide">
+                                        {item}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
 
-                    <button
-                        onClick={onClose}
-                        className="h-6 w-6 flex items-center justify-center rounded hover:bg-destructive/10 hover:text-destructive transition-all opacity-50"
-                        title={getLabel("terminal.composeBar.close", "Close")}
-                    >
-                        <X size={14} />
-                    </button>
-                </div>
-            </div>
+                        <div className="w-px h-3 bg-border/40 mx-1" />
+                        <div className="flex-1" />
 
-            <div className="shrink-0 px-3 py-1.5 border-b border-border/30 overflow-x-auto">
-                <div className="flex items-center gap-1.5 min-w-max">
-                    {visibleSnippets.length > 0 ? (
-                        visibleSnippets.map((snippet) => (
-                            <ContextMenu key={snippet.id}>
-                                <ContextMenuTrigger asChild>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleSnippetExecute(snippet)}
-                                        className="h-6 px-2 rounded border border-border/50 bg-black/20 hover:bg-white/10 text-[10px] font-medium transition-colors flex items-center gap-1.5"
-                                        title={snippet.command}
-                                    >
-                                        <Play size={10} className="opacity-70" />
-                                        <span className="max-w-[140px] truncate">{snippet.label}</span>
-                                    </button>
-                                </ContextMenuTrigger>
-                                <ContextMenuContent>
-                                    <ContextMenuItem onClick={() => handleSnippetExecute(snippet)}>
-                                        <Play className="mr-2 h-4 w-4" />
-                                        {getLabel('action.run', 'Run')}
-                                    </ContextMenuItem>
-                                    <ContextMenuItem onClick={() => handleEditSnippetInline(snippet)}>
-                                        {getLabel('snippets.action.editInline', 'Edit In Composer')}
-                                    </ContextMenuItem>
-                                    <ContextMenuItem onClick={() => handleEditSnippet(snippet)}>
-                                        {getLabel('action.edit', 'Edit')}
-                                    </ContextMenuItem>
-                                </ContextMenuContent>
-                            </ContextMenu>
-                        ))
-                    ) : (
-                        <ContextMenu>
-                            <ContextMenuTrigger asChild>
-                                <span className="text-[10px] text-muted-foreground cursor-context-menu select-none">
+                        <div className="flex items-center gap-1">
+                            <button
+                                type="button"
+                                onClick={handleAddSnippet}
+                                className="h-6 w-6 flex items-center justify-center rounded hover:bg-white/5 transition-all opacity-70"
+                                title={getLabel('snippets.action.newSnippet', 'New Snippet')}
+                            >
+                                <Plus size={14} />
+                            </button>
+                            {showBroadcastToggle && (
+                                <button
+                                    onClick={onToggleBroadcast}
+                                    className={cn(
+                                        "h-6 px-2 flex items-center gap-1.5 rounded transition-all",
+                                        isBroadcastEnabled ? "bg-amber-500/10 text-amber-500" : "hover:bg-white/5 opacity-60"
+                                    )}
+                                >
+                                    <Radio size={12} className={cn(isBroadcastEnabled && "animate-pulse")} />
+                                    <span className="text-[10px] font-bold uppercase tracking-wider">Broadcast</span>
+                                </button>
+                            )}
+
+                            <button
+                                onClick={onClose}
+                                className="h-6 w-6 flex items-center justify-center rounded hover:bg-destructive/10 hover:text-destructive transition-all opacity-50"
+                                title={getLabel("terminal.composeBar.close", "Close")}
+                            >
+                                <X size={14} />
+                            </button>
+                        </div>
+                    </div>
+                </ContextMenuTrigger>
+                <ContextMenuContent>
+                    <ContextMenuItem onClick={handleAddSnippet}>
+                        <Plus className="mr-2 h-4 w-4" />
+                        {getLabel('snippets.menu.newButton', 'New Button...')}
+                    </ContextMenuItem>
+                    <ContextMenuItem onClick={handleManageSnippets}>
+                        {getLabel('snippets.menu.manageButtons', 'Manage Buttons...')}
+                    </ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem onClick={handleNewPackage}>
+                        {getLabel('snippets.menu.newButtonBar', 'New Button Bar...')}
+                    </ContextMenuItem>
+                    <ContextMenuItem onClick={handleManageSnippets}>
+                        {getLabel('snippets.menu.manageButtonBars', 'Manage Button Bars...')}
+                    </ContextMenuItem>
+                </ContextMenuContent>
+            </ContextMenu>
+
+            <ContextMenu>
+                <ContextMenuTrigger asChild>
+                    <div className="shrink-0 px-3 py-1.5 border-b border-border/30 overflow-x-auto">
+                        <div className="flex items-center gap-1.5 min-w-max">
+                            {visibleSnippets.length > 0 ? (
+                                visibleSnippets.map((snippet) => (
+                                    <ContextMenu key={snippet.id}>
+                                        <ContextMenuTrigger asChild>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleSnippetExecute(snippet)}
+                                                className="h-6 px-2 rounded border border-border/50 bg-black/20 hover:bg-white/10 text-[10px] font-medium transition-colors flex items-center gap-1.5"
+                                                title={snippet.command}
+                                            >
+                                                <Play size={10} className="opacity-70" />
+                                                <span className="max-w-[140px] truncate">{snippet.label}</span>
+                                            </button>
+                                        </ContextMenuTrigger>
+                                        <ContextMenuContent>
+                                            <ContextMenuItem onClick={() => handleSnippetExecute(snippet)}>
+                                                <Play className="mr-2 h-4 w-4" />
+                                                {getLabel('action.run', 'Run')}
+                                            </ContextMenuItem>
+                                            <ContextMenuItem onClick={() => handleEditSnippetInline(snippet)}>
+                                                {getLabel('snippets.action.editInline', 'Edit In Composer')}
+                                            </ContextMenuItem>
+                                            <ContextMenuItem onClick={() => handleEditSnippet(snippet)}>
+                                                {getLabel('action.edit', 'Edit')}
+                                            </ContextMenuItem>
+                                        </ContextMenuContent>
+                                    </ContextMenu>
+                                ))
+                            ) : (
+                                <span className="text-[10px] text-muted-foreground select-none">
                                     {getLabel('terminal.toolbar.noSnippets', 'No snippets available')}
                                 </span>
-                            </ContextMenuTrigger>
-                            <ContextMenuContent>
-                                <ContextMenuItem onClick={handleAddSnippet}>
-                                    <Plus className="mr-2 h-4 w-4" />
-                                    {getLabel('snippets.action.newSnippet', 'New Snippet')}
-                                </ContextMenuItem>
-                            </ContextMenuContent>
-                        </ContextMenu>
-                    )}
-                </div>
-            </div>
+                            )}
+                        </div>
+                    </div>
+                </ContextMenuTrigger>
+                <ContextMenuContent>
+                    <ContextMenuItem onClick={handleAddSnippet}>
+                        <Plus className="mr-2 h-4 w-4" />
+                        {getLabel('snippets.menu.newButton', 'New Button...')}
+                    </ContextMenuItem>
+                    <ContextMenuItem onClick={handleManageSnippets}>
+                        {getLabel('snippets.menu.manageButtons', 'Manage Buttons...')}
+                    </ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem onClick={handleNewPackage}>
+                        {getLabel('snippets.menu.newButtonBar', 'New Button Bar...')}
+                    </ContextMenuItem>
+                    <ContextMenuItem onClick={handleManageSnippets}>
+                        {getLabel('snippets.menu.manageButtonBars', 'Manage Button Bars...')}
+                    </ContextMenuItem>
+                </ContextMenuContent>
+            </ContextMenu>
 
             <div className="relative w-full px-3 py-2 flex-1 min-h-0">
                 <ContextMenu>
