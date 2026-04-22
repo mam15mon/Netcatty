@@ -269,7 +269,7 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
             <ContextMenu>
                 <ContextMenuTrigger asChild>
                     <div
-                        className="flex items-center h-8 px-3 gap-2"
+                        className="flex items-center h-9 px-3 gap-2"
                         style={{
                             backgroundColor: `color-mix(in srgb, ${resolvedFg} 5%, transparent)`,
                         }}
@@ -294,17 +294,52 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                         </Select>
 
                         <div className="w-px h-3 bg-border/40 mx-1" />
-                        <div className="flex-1" />
+                        <div className="min-w-0 flex-1 overflow-x-auto">
+                            <div className="flex items-center gap-1.5 min-w-max pr-2">
+                                {visibleSnippets.length > 0 ? (
+                                    visibleSnippets.map((snippet) => (
+                                        <ContextMenu key={snippet.id}>
+                                            <ContextMenuTrigger asChild>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleSnippetExecute(snippet)}
+                                                    className="h-6 px-2 rounded border border-border/50 bg-black/20 hover:bg-white/10 text-[10px] font-medium transition-colors flex items-center gap-1.5"
+                                                    title={snippet.command}
+                                                >
+                                                    <Play
+                                                        size={10}
+                                                        className={cn(!resolveSnippetIconColor(snippet) && "opacity-70")}
+                                                        style={resolveSnippetIconColor(snippet) ? { color: resolveSnippetIconColor(snippet) } : undefined}
+                                                    />
+                                                    <span className="max-w-[140px] truncate">{snippet.label}</span>
+                                                </button>
+                                            </ContextMenuTrigger>
+                                            <ContextMenuContent>
+                                                <ContextMenuItem onClick={() => handleSnippetExecute(snippet)}>
+                                                    <Play
+                                                        className={cn("mr-2 h-4 w-4", !resolveSnippetIconColor(snippet) && "opacity-70")}
+                                                        style={resolveSnippetIconColor(snippet) ? { color: resolveSnippetIconColor(snippet) } : undefined}
+                                                    />
+                                                    {getLabel('action.run', 'Run')}
+                                                </ContextMenuItem>
+                                                <ContextMenuItem onClick={() => handleEditSnippetInline(snippet)}>
+                                                    {getLabel('snippets.action.editInline', 'Edit In Composer')}
+                                                </ContextMenuItem>
+                                                <ContextMenuItem onClick={() => handleEditSnippet(snippet)}>
+                                                    {getLabel('action.edit', 'Edit')}
+                                                </ContextMenuItem>
+                                            </ContextMenuContent>
+                                        </ContextMenu>
+                                    ))
+                                ) : (
+                                    <span className="text-[10px] text-muted-foreground select-none">
+                                        {getLabel('terminal.toolbar.noSnippets', 'No snippets available')}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
 
                         <div className="flex items-center gap-1">
-                            <button
-                                type="button"
-                                onClick={handleAddSnippet}
-                                className="h-6 w-6 flex items-center justify-center rounded hover:bg-white/5 transition-all opacity-70"
-                                title={getLabel('snippets.action.newSnippet', 'New Snippet')}
-                            >
-                                <Plus size={14} />
-                            </button>
                             {showBroadcastToggle && (
                                 <button
                                     onClick={onToggleBroadcast}
@@ -325,71 +360,6 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                             >
                                 <X size={14} />
                             </button>
-                        </div>
-                    </div>
-                </ContextMenuTrigger>
-                <ContextMenuContent>
-                    <ContextMenuItem onClick={handleAddSnippet}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        {getLabel('snippets.menu.newButton', 'New Button...')}
-                    </ContextMenuItem>
-                    <ContextMenuItem onClick={handleManageSnippets}>
-                        {getLabel('snippets.menu.manageButtons', 'Manage Buttons...')}
-                    </ContextMenuItem>
-                    <ContextMenuSeparator />
-                    <ContextMenuItem onClick={handleNewPackage}>
-                        {getLabel('snippets.menu.newButtonBar', 'New Button Bar...')}
-                    </ContextMenuItem>
-                    <ContextMenuItem onClick={handleManageSnippets}>
-                        {getLabel('snippets.menu.manageButtonBars', 'Manage Button Bars...')}
-                    </ContextMenuItem>
-                </ContextMenuContent>
-            </ContextMenu>
-
-            <ContextMenu>
-                <ContextMenuTrigger asChild>
-                    <div className="shrink-0 px-3 py-1.5 border-b border-border/30 overflow-x-auto">
-                        <div className="flex items-center gap-1.5 min-w-max">
-                            {visibleSnippets.length > 0 ? (
-                                visibleSnippets.map((snippet) => (
-                                    <ContextMenu key={snippet.id}>
-                                        <ContextMenuTrigger asChild>
-                                            <button
-                                                type="button"
-                                                onClick={() => handleSnippetExecute(snippet)}
-                                                className="h-6 px-2 rounded border border-border/50 bg-black/20 hover:bg-white/10 text-[10px] font-medium transition-colors flex items-center gap-1.5"
-                                                title={snippet.command}
-                                            >
-                                                <Play
-                                                    size={10}
-                                                    className={cn(!resolveSnippetIconColor(snippet) && "opacity-70")}
-                                                    style={resolveSnippetIconColor(snippet) ? { color: resolveSnippetIconColor(snippet) } : undefined}
-                                                />
-                                                <span className="max-w-[140px] truncate">{snippet.label}</span>
-                                            </button>
-                                        </ContextMenuTrigger>
-                                        <ContextMenuContent>
-                                            <ContextMenuItem onClick={() => handleSnippetExecute(snippet)}>
-                                                <Play
-                                                    className={cn("mr-2 h-4 w-4", !resolveSnippetIconColor(snippet) && "opacity-70")}
-                                                    style={resolveSnippetIconColor(snippet) ? { color: resolveSnippetIconColor(snippet) } : undefined}
-                                                />
-                                                {getLabel('action.run', 'Run')}
-                                            </ContextMenuItem>
-                                            <ContextMenuItem onClick={() => handleEditSnippetInline(snippet)}>
-                                                {getLabel('snippets.action.editInline', 'Edit In Composer')}
-                                            </ContextMenuItem>
-                                            <ContextMenuItem onClick={() => handleEditSnippet(snippet)}>
-                                                {getLabel('action.edit', 'Edit')}
-                                            </ContextMenuItem>
-                                        </ContextMenuContent>
-                                    </ContextMenu>
-                                ))
-                            ) : (
-                                <span className="text-[10px] text-muted-foreground select-none">
-                                    {getLabel('terminal.toolbar.noSnippets', 'No snippets available')}
-                                </span>
-                            )}
                         </div>
                     </div>
                 </ContextMenuTrigger>
