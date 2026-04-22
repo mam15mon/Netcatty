@@ -475,7 +475,6 @@ export class KeywordHighlighter implements IDisposable {
     const rangeEnd = viewportEnd + overscan;
 
     const previousRange = this.lastRenderRange;
-    const previousViewportRange = this.lastViewportRange;
     this.beginTerminalRefreshTracking(viewportStart, viewportEnd);
     try {
       this.reindexLineDecorationsFromMarkers();
@@ -483,30 +482,13 @@ export class KeywordHighlighter implements IDisposable {
       if (reason === "write") {
         this.processDirtyLinesInRange(rangeStart, rangeEnd, cursorAbsoluteY, "write");
       } else if (reason === "scroll") {
-        if (this.forceViewportReconcileOnNextScroll) {
-          this.clearLineDecorationsInRange(viewportStart, viewportEnd);
-          this.forceViewportReconcileOnNextScroll = false;
-        }
-        // Always process the full viewport on scroll.
-        // Incremental-only processing can miss lines when scroll/render/write
-        // events interleave and coverage bookkeeping becomes stale.
-        this.processLineRange(viewportStart, viewportEnd, cursorAbsoluteY);
-        const viewportChanged =
-          previousViewportRange === null ||
-          previousViewportRange.start !== viewportStart ||
-          previousViewportRange.end !== viewportEnd;
-        if (viewportChanged) {
-          if (rangeStart < viewportStart) {
-            this.addDirtyRange(rangeStart, viewportStart - 1);
-          }
-          if (rangeEnd > viewportEnd) {
-            this.addDirtyRange(viewportEnd + 1, rangeEnd);
-          }
-        }
-        // Overscan catch-up should not re-enter the scroll path on continuation,
-        // otherwise repeated same-viewport refreshes can keep re-queueing the
-        // same dirty ranges and starve completion.
-        this.processDirtyLinesInRange(rangeStart, rangeEnd, cursorAbsoluteY, "write");
+        // Hard scroll mode: rebuild the whole render window synchronously
+        // (viewport + overscan), avoiding dirty-range races under fast wheel drags.
+        this.clearLineDecorationsInRange(rangeStart, rangeEnd);
+        this.processLineRange(rangeStart, rangeEnd, cursorAbsoluteY);
+        this.removeDirtyRange(rangeStart, rangeEnd);
+        this.dirtyAllInRenderRange = false;
+        this.forceViewportReconcileOnNextScroll = false;
       } else if (previousRange !== null && this.lineDecorations.size > 0) {
         if (rangeStart < previousRange.start) {
           this.processLineRange(rangeStart, Math.min(rangeEnd, previousRange.start - 1), cursorAbsoluteY);
