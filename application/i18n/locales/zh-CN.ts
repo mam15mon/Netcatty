@@ -1697,6 +1697,7 @@ const zhCN: Messages = {
   'snippets.menu.manageButtons': '管理按钮...',
   'snippets.menu.newButtonBar': '新建按钮栏...',
   'snippets.menu.manageButtonBars': '管理按钮栏...',
+  'snippets.deletePackage.confirm': '确定删除代码包“{name}”吗？该包内代码片段会移动到根目录。',
   'snippets.panel.newTitle': '新建代码片段',
   'snippets.panel.editTitle': '编辑代码片段',
   'snippets.field.description': '描述',

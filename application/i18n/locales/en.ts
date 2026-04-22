@@ -1680,6 +1680,7 @@ const en: Messages = {
   'snippets.menu.manageButtons': 'Manage Buttons...',
   'snippets.menu.newButtonBar': 'New Button Bar...',
   'snippets.menu.manageButtonBars': 'Manage Button Bars...',
+  'snippets.deletePackage.confirm': 'Delete package "{name}"? Snippets inside it will be moved to root.',
   'snippets.panel.newTitle': 'New Snippet',
   'snippets.panel.editTitle': 'Edit Snippet',
   'snippets.field.description': 'Action description',

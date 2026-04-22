@@ -126,9 +126,6 @@ const ScriptsSidePanelInner: React.FC<ScriptsSidePanelProps> = ({
   }, [onSnippetClick]);
 
   const handleAddSnippet = useCallback(() => {
-    // Let the App shell listen and navigate to the Snippets section with
-    // the "add" panel pre-opened, so the user does not have to leave the
-    // terminal to jump back and click "New Snippet".
     window.dispatchEvent(new CustomEvent('netcatty:snippets:add'));
   }, []);
 
@@ -141,6 +138,18 @@ const ScriptsSidePanelInner: React.FC<ScriptsSidePanelProps> = ({
   const handleDeleteSnippet = useCallback((id: string) => {
     window.dispatchEvent(
       new CustomEvent('netcatty:snippets:delete', { detail: { id } }),
+    );
+  }, []);
+
+  const handleRenamePackage = useCallback((path: string) => {
+    window.dispatchEvent(
+      new CustomEvent('netcatty:snippets:package-rename', { detail: { path } }),
+    );
+  }, []);
+
+  const handleDeletePackage = useCallback((path: string) => {
+    window.dispatchEvent(
+      new CustomEvent('netcatty:snippets:package-delete', { detail: { path } }),
     );
   }, []);
 
@@ -211,22 +220,36 @@ const ScriptsSidePanelInner: React.FC<ScriptsSidePanelProps> = ({
 
           {/* Packages */}
           {filteredPackages.map((pkg) => (
-            <button
-              key={pkg.path}
-              className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-accent/50 transition-colors"
-              onClick={() => { setSelectedPackage(pkg.path); setSearch(''); }}
-            >
-              <div className="w-6 h-6 rounded-md bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                <Package size={12} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-medium truncate">{pkg.name}</div>
-                <div className="text-[10px] text-muted-foreground">
-                  {t('snippets.package.count', { count: pkg.count })}
-                </div>
-              </div>
-              <ChevronRight size={12} className="text-muted-foreground shrink-0" />
-            </button>
+            <ContextMenu key={pkg.path}>
+              <ContextMenuTrigger asChild>
+                <button
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-accent/50 transition-colors"
+                  onClick={() => { setSelectedPackage(pkg.path); setSearch(''); }}
+                >
+                  <div className="w-6 h-6 rounded-md bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                    <Package size={12} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-medium truncate">{pkg.name}</div>
+                    <div className="text-[10px] text-muted-foreground">
+                      {t('snippets.package.count', { count: pkg.count })}
+                    </div>
+                  </div>
+                  <ChevronRight size={12} className="text-muted-foreground shrink-0" />
+                </button>
+              </ContextMenuTrigger>
+              <ContextMenuContent>
+                <ContextMenuItem onClick={() => handleRenamePackage(pkg.path)}>
+                  <Edit2 className="mr-2 h-4 w-4" /> {t('common.rename')}
+                </ContextMenuItem>
+                <ContextMenuItem
+                  className="text-destructive"
+                  onClick={() => handleDeletePackage(pkg.path)}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" /> {t('action.delete')}
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
           ))}
 
           {/* Snippets */}
