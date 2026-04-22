@@ -354,6 +354,22 @@ export class KeywordHighlighter implements IDisposable {
       return;
     }
 
+    // Prefer true "what you see is what gets highlighted" behavior on scroll:
+    // process the current viewport immediately instead of waiting for next rAF.
+    if (mode === "immediate" && reason === "scroll") {
+      if (this.animationFrameId !== null) {
+        cancelAnimationFrame(this.animationFrameId);
+        this.animationFrameId = null;
+      }
+      if (this.debounceTimer) {
+        clearTimeout(this.debounceTimer);
+        this.debounceTimer = null;
+      }
+      this.forceViewportReconcileOnNextScroll = true;
+      this.executeRefresh();
+      return;
+    }
+
     if (mode === "continuation") {
       if (this.animationFrameId !== null) {
         return;
