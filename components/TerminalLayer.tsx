@@ -734,7 +734,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
 
   const handleComposerSend = useCallback((text: string) => {
     if (!text) return;
-    const data = text.endsWith('\n') || text.endsWith('\r') ? text : text + '\n';
+    const data = `${normalizeLineEndings(text)}\r`;
     
     let targetIds: string[] = [];
     if (resolvedComposerSendTarget === 'current-split') {
