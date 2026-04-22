@@ -792,9 +792,10 @@ export class KeywordHighlighter implements IDisposable {
 
   private getAdaptiveHighlightingProfile(now = performance.now()) {
     const config = XTERM_PERFORMANCE_CONFIG.highlighting;
+    const overscanLines = this.getBaseOverscanLines();
     if (!this.isWriteBurstActive(now)) {
       return {
-        overscanLines: config.overscanLines,
+        overscanLines,
         writeRefreshBudgetMs: config.writeRefreshBudgetMs,
         dirtySegmentChunkSize: config.dirtySegmentChunkSize,
         debounceMs: config.debounceMs,
@@ -803,7 +804,7 @@ export class KeywordHighlighter implements IDisposable {
     }
 
     return {
-      overscanLines: Math.max(8, Math.round(config.overscanLines * KeywordHighlighter.WRITE_BURST_OVERSCAN_SCALE)),
+      overscanLines: Math.max(8, Math.round(overscanLines * KeywordHighlighter.WRITE_BURST_OVERSCAN_SCALE)),
       writeRefreshBudgetMs: Math.max(1, config.writeRefreshBudgetMs * KeywordHighlighter.WRITE_BURST_BUDGET_SCALE),
       dirtySegmentChunkSize: Math.max(8, Math.round(config.dirtySegmentChunkSize * KeywordHighlighter.WRITE_BURST_CHUNK_SCALE)),
       debounceMs: Math.max(config.debounceMs, KeywordHighlighter.WRITE_BURST_DEBOUNCE_MS),
@@ -828,7 +829,12 @@ export class KeywordHighlighter implements IDisposable {
     if (reason === "write") {
       return this.getAdaptiveHighlightingProfile().overscanLines;
     }
-    return XTERM_PERFORMANCE_CONFIG.highlighting.overscanLines;
+    return this.getBaseOverscanLines();
+  }
+
+  private getBaseOverscanLines(): number {
+    const ratio = XTERM_PERFORMANCE_CONFIG.highlighting.overscanViewportRatio;
+    return Math.max(1, Math.round(this.term.rows * ratio));
   }
 
   private getWriteBurstDeferDelay(now: number): number {

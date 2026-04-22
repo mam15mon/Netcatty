@@ -103,8 +103,8 @@ export const XTERM_PERFORMANCE_CONFIG = {
     // Number of unique line scan results to keep cached.
     cacheEntries: 1200,
     // Keep decorations for lines just outside the viewport so small scrolls
-    // don't constantly dispose/recreate them.
-    overscanLines: 30,
+    // don't constantly dispose/recreate them. Scales with current terminal rows.
+    overscanViewportRatio: 0.9,
     // Dirty scan padding around cursor/viewport deltas for write bursts.
     dirtyScanPadding: 2,
     // Dynamic dirty-line cap scales with viewport rows.
