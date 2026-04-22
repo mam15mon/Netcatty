@@ -1218,7 +1218,7 @@ const en: Messages = {
   'terminal.toolbar.broadcastEnable': 'Enable Broadcast Mode',
   'terminal.toolbar.broadcastDisable': 'Disable Broadcast Mode',
   'terminal.toolbar.composeBar': 'Compose Bar',
-  'terminal.composeBar.placeholder': 'Type command here, press Enter to send...',
+  'terminal.composeBar.placeholder': 'Type command here, press Enter to send (right-click to choose send target)...',
   'terminal.composeBar.send': 'Send',
   'terminal.composeBar.close': 'Close compose bar',
   'terminal.composeBar.broadcasting': 'Broadcasting to all sessions',

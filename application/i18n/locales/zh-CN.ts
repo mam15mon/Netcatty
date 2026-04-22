@@ -824,7 +824,7 @@ const zhCN: Messages = {
   'terminal.toolbar.broadcastEnable': '启用广播模式',
   'terminal.toolbar.broadcastDisable': '关闭广播模式',
   'terminal.toolbar.composeBar': '撰写栏',
-  'terminal.composeBar.placeholder': '在此输入命令，按回车发送...',
+  'terminal.composeBar.placeholder': '在此输入命令，按回车发送（右键切换发送目标）...',
   'terminal.composeBar.send': '发送',
   'terminal.composeBar.close': '关闭撰写栏',
   'terminal.composeBar.broadcasting': '正在广播到所有会话',

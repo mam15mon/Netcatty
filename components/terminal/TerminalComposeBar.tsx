@@ -6,12 +6,19 @@
  * hair-line top border separating it from the terminal output, while
  * preserving Netcatty's send-target and broadcast controls.
  */
-import { Radio, X } from 'lucide-react';
+import { Check, Play, Radio, X } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { useStoredNumber } from '../../application/state/useStoredNumber';
 import { cn } from '../../lib/utils';
 import { STORAGE_KEY_TERM_COMPOSE_BAR_HEIGHT } from '../../infrastructure/config/storageKeys';
+import { Snippet } from '../../types';
+import {
+    ContextMenu,
+    ContextMenuContent,
+    ContextMenuItem,
+    ContextMenuTrigger,
+} from '../ui/context-menu';
 
 import {
     Select,
@@ -38,6 +45,9 @@ export interface TerminalComposeBarProps {
     sendTarget?: ComposeSendTarget;
     onSendTargetChange?: (target: ComposeSendTarget) => void;
     availableTargets?: ComposeSendTarget[];
+    snippets?: Snippet[];
+    snippetPackages?: string[];
+    onSnippetExecute?: (command: string, noAutoRun?: boolean) => void;
     targetName?: string;
 }
 
@@ -53,6 +63,9 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
     sendTarget = 'current-split',
     onSendTargetChange,
     availableTargets,
+    snippets = [],
+    snippetPackages = [],
+    onSnippetExecute,
     targetName: _targetName,
 }) => {
     const { t } = useI18n();
@@ -90,6 +103,35 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
         }
     }, [resolvedSendTarget, getLabel]);
 
+    const packageOptions = useMemo<string[]>(() => {
+        const set = new Set<string>();
+        snippetPackages.forEach((item) => {
+            if (item) set.add(item);
+        });
+        snippets.forEach((snippet) => {
+            if (snippet.package) set.add(snippet.package);
+        });
+        return Array.from(set).sort((a, b) => a.localeCompare(b));
+    }, [snippetPackages, snippets]);
+    const allPackagesValue = '__all_packages__';
+
+    const [selectedPackage, setSelectedPackage] = useState('');
+    useEffect(() => {
+        if (selectedPackage && !packageOptions.includes(selectedPackage)) {
+            setSelectedPackage('');
+        }
+    }, [packageOptions, selectedPackage]);
+
+    const visibleSnippets = useMemo<Snippet[]>(() => {
+        const filtered = snippets.filter((snippet) => {
+            if (!selectedPackage) return true;
+            return (snippet.package || '') === selectedPackage;
+        });
+        return filtered
+            .slice()
+            .sort((a, b) => a.label.localeCompare(b.label));
+    }, [selectedPackage, snippets]);
+
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const isComposingRef = useRef(false);
     const [internalValue, setInternalValue] = useState('');
@@ -115,6 +157,21 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
         setComposeText('');
         textareaRef.current?.focus();
     }, [inputValue, onSend, setComposeText]);
+
+    const handleSnippetExecute = useCallback((snippet: Snippet) => {
+        if (onSnippetExecute) {
+            onSnippetExecute(snippet.command, snippet.noAutoRun);
+        } else {
+            onSend(snippet.command);
+        }
+        textareaRef.current?.focus();
+    }, [onSend, onSnippetExecute]);
+
+    const handleEditSnippet = useCallback((snippet: Snippet) => {
+        window.dispatchEvent(
+            new CustomEvent('netcatty:snippets:edit', { detail: { snippet } }),
+        );
+    }, []);
 
     const [composeHeight, setComposeHeight, persistComposeHeight] = useStoredNumber(
         STORAGE_KEY_TERM_COMPOSE_BAR_HEIGHT,
@@ -172,7 +229,7 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
 
     return (
         <div
-            className="flex-shrink-0 flex flex-col w-full text-xs font-sans select-none relative group/compose"
+            className="flex-shrink-0 flex flex-col w-full text-xs font-sans select-none relative"
             style={{
                 backgroundColor: resolvedBg,
                 color: resolvedFg,
@@ -180,13 +237,11 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                 height: `${composeHeight}px`,
             }}
         >
-            {/* Resize Handle */}
+            {/* Resize Handle (Invisible, cursor only) */}
             <div
-                className="absolute -top-1 left-0 right-0 h-2 cursor-ns-resize z-50 flex items-center justify-center"
+                className="absolute -top-1 left-0 right-0 h-2 cursor-ns-resize z-50"
                 onMouseDown={startResizing}
-            >
-                <div className="w-12 h-1 rounded-full bg-primary/0 group-hover/compose:bg-primary/20 transition-colors" />
-            </div>
+            />
 
             <div
                 className="flex items-center h-8 px-3 gap-2"
@@ -194,32 +249,29 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                     backgroundColor: `color-mix(in srgb, ${resolvedFg} 5%, transparent)`,
                 }}
             >
-                {onSendTargetChange && (
+                {packageOptions.length > 0 ? (
                     <Select
-                        value={resolvedSendTarget}
-                        onValueChange={(value) => onSendTargetChange(value as ComposeSendTarget)}
+                        value={selectedPackage || allPackagesValue}
+                        onValueChange={(value) => setSelectedPackage(value === allPackagesValue ? '' : value)}
                     >
-                        <SelectTrigger className="h-6 w-auto px-2 bg-black/20 border-border/20 hover:bg-white/5 transition-colors gap-1.5 focus:ring-0 focus:ring-offset-0">
-                            <SelectValue placeholder={targetLabel} />
+                        <SelectTrigger className="h-6 w-auto px-2 bg-black/20 border-border/20 hover:bg-white/5 transition-colors gap-1.5 focus:ring-0 focus:ring-offset-0 text-[10px] font-medium tracking-wide flex items-center [&>span]:translate-y-[1.5px]">
+                            <SelectValue placeholder={getLabel('snippets.breadcrumb.allPackages', 'All Packages')} />
                         </SelectTrigger>
                         <SelectContent className="bg-background border-border/30 z-[1000]">
-                            {resolvedTargets.includes('current-split') && (
-                                <SelectItem value="current-split">
-                                    {getLabel("terminal.composeBar.sendTarget.currentSplit", "Active Session")}
+                            <SelectItem value={allPackagesValue} className="text-[10px] font-medium tracking-wide">
+                                {getLabel('snippets.breadcrumb.allPackages', 'All Packages')}
+                            </SelectItem>
+                            {packageOptions.map((item) => (
+                                <SelectItem key={item} value={item} className="text-[10px] font-medium tracking-wide">
+                                    {item}
                                 </SelectItem>
-                            )}
-                            {resolvedTargets.includes('current-tab') && (
-                                <SelectItem value="current-tab">
-                                    {getLabel("terminal.composeBar.sendTarget.currentTab", "Active Tab")}
-                                </SelectItem>
-                            )}
-                            {resolvedTargets.includes('all-sessions') && (
-                                <SelectItem value="all-sessions">
-                                    {getLabel("terminal.composeBar.sendTarget.allSessions", "All Sessions")}
-                                </SelectItem>
-                            )}
+                            ))}
                         </SelectContent>
                     </Select>
+                ) : (
+                    <span className="text-[10px] font-medium text-muted-foreground px-1">
+                        {getLabel('snippets.field.package', 'Package')}
+                    </span>
                 )}
 
                 <div className="w-px h-3 bg-border/40 mx-1" />
@@ -249,24 +301,81 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                 </div>
             </div>
 
-            <div className="relative w-full px-3 py-2 flex-1 min-h-0">
-                <textarea
-                    ref={textareaRef}
-                    className={cn(
-                        "w-full h-full resize-none bg-transparent text-[13px] font-mono leading-relaxed",
-                        "outline-none transition-all duration-200 block border-none scrollbar-thin",
-                        "placeholder:opacity-70",
+            <div className="shrink-0 px-3 py-1.5 border-b border-border/30 overflow-x-auto">
+                <div className="flex items-center gap-1.5 min-w-max">
+                    {visibleSnippets.length > 0 ? (
+                        visibleSnippets.map((snippet) => (
+                            <ContextMenu key={snippet.id}>
+                                <ContextMenuTrigger asChild>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSnippetExecute(snippet)}
+                                        className="h-6 px-2 rounded border border-border/50 bg-black/20 hover:bg-white/10 text-[10px] font-medium transition-colors flex items-center gap-1.5"
+                                        title={snippet.command}
+                                    >
+                                        <Play size={10} className="opacity-70" />
+                                        <span className="max-w-[140px] truncate">{snippet.label}</span>
+                                    </button>
+                                </ContextMenuTrigger>
+                                <ContextMenuContent>
+                                    <ContextMenuItem onClick={() => handleSnippetExecute(snippet)}>
+                                        <Play className="mr-2 h-4 w-4" />
+                                        {getLabel('action.run', 'Run')}
+                                    </ContextMenuItem>
+                                    <ContextMenuItem onClick={() => handleEditSnippet(snippet)}>
+                                        {getLabel('action.edit', 'Edit')}
+                                    </ContextMenuItem>
+                                </ContextMenuContent>
+                            </ContextMenu>
+                        ))
+                    ) : (
+                        <span className="text-[10px] text-muted-foreground">
+                            {getLabel('terminal.toolbar.noSnippets', 'No snippets available')}
+                        </span>
                     )}
-                    style={{
-                        color: resolvedFg,
-                    }}
-                    value={inputValue}
-                    placeholder={getLabel("terminal.composeBar.placeholder", "Enter commands to send to session...")}
-                    onInput={(e) => setComposeText(e.currentTarget.value)}
-                    onKeyDown={handleKeyDown}
-                    onCompositionStart={() => { isComposingRef.current = true; }}
-                    onCompositionEnd={() => { isComposingRef.current = false; }}
-                />
+                </div>
+            </div>
+
+            <div className="relative w-full px-3 py-2 flex-1 min-h-0">
+                <ContextMenu>
+                    <ContextMenuTrigger asChild>
+                        <textarea
+                            ref={textareaRef}
+                            className={cn(
+                                "w-full h-full resize-none bg-transparent text-[13px] font-mono leading-relaxed",
+                                "outline-none transition-all duration-200 block border-none scrollbar-thin",
+                                "placeholder:opacity-70",
+                            )}
+                            style={{
+                                color: resolvedFg,
+                            }}
+                            value={inputValue}
+                            placeholder={`${getLabel("terminal.composeBar.placeholder", "Type command here, press Enter to send (right-click to choose send target)...")} (${targetLabel})`}
+                            onInput={(e) => setComposeText(e.currentTarget.value)}
+                            onKeyDown={handleKeyDown}
+                            onCompositionStart={() => { isComposingRef.current = true; }}
+                            onCompositionEnd={() => { isComposingRef.current = false; }}
+                        />
+                    </ContextMenuTrigger>
+                    {onSendTargetChange && (
+                        <ContextMenuContent>
+                            {resolvedTargets.map((target) => {
+                                const selected = target === resolvedSendTarget;
+                                const label = target === 'current-split'
+                                    ? getLabel("terminal.composeBar.sendTarget.currentSplit", "Active Session")
+                                    : target === 'current-tab'
+                                        ? getLabel("terminal.composeBar.sendTarget.currentTab", "Active Tab")
+                                        : getLabel("terminal.composeBar.sendTarget.allSessions", "All Sessions");
+                                return (
+                                    <ContextMenuItem key={target} onClick={() => onSendTargetChange(target)}>
+                                        <Check className={cn("mr-2 h-4 w-4", selected ? "opacity-100" : "opacity-0")} />
+                                        {label}
+                                    </ContextMenuItem>
+                                );
+                            })}
+                        </ContextMenuContent>
+                    )}
+                </ContextMenu>
             </div>
         </div>
     );

@@ -2823,6 +2823,9 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                   sendTarget={resolvedComposerSendTarget}
                   onSendTargetChange={setComposerSendTarget}
                   availableTargets={composerAvailableTargets}
+                  snippets={snippets}
+                  snippetPackages={snippetPackages}
+                  onSnippetExecute={handleSnippetClickForFocusedSession}
                   targetName={
                     resolvedComposerSendTarget === 'all-sessions' 
                       ? undefined 
