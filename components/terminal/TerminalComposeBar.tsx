@@ -6,7 +6,7 @@
  * hair-line top border separating it from the terminal output, while
  * preserving Netcatty's send-target and broadcast controls.
  */
-import { Check, Play, Radio, X } from 'lucide-react';
+import { Check, Play, Plus, Radio, X } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { useStoredNumber } from '../../application/state/useStoredNumber';
@@ -178,6 +178,10 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
         );
     }, []);
 
+    const handleAddSnippet = useCallback(() => {
+        window.dispatchEvent(new CustomEvent('netcatty:snippets:add'));
+    }, []);
+
     const [composeHeight, setComposeHeight, persistComposeHeight] = useStoredNumber(
         STORAGE_KEY_TERM_COMPOSE_BAR_HEIGHT,
         120,
@@ -277,6 +281,14 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                 <div className="flex-1" />
 
                 <div className="flex items-center gap-1">
+                    <button
+                        type="button"
+                        onClick={handleAddSnippet}
+                        className="h-6 w-6 flex items-center justify-center rounded hover:bg-white/5 transition-all opacity-70"
+                        title={getLabel('snippets.action.newSnippet', 'New Snippet')}
+                    >
+                        <Plus size={14} />
+                    </button>
                     {showBroadcastToggle && (
                         <button
                             onClick={onToggleBroadcast}
@@ -331,9 +343,19 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                             </ContextMenu>
                         ))
                     ) : (
-                        <span className="text-[10px] text-muted-foreground">
-                            {getLabel('terminal.toolbar.noSnippets', 'No snippets available')}
-                        </span>
+                        <ContextMenu>
+                            <ContextMenuTrigger asChild>
+                                <span className="text-[10px] text-muted-foreground cursor-context-menu select-none">
+                                    {getLabel('terminal.toolbar.noSnippets', 'No snippets available')}
+                                </span>
+                            </ContextMenuTrigger>
+                            <ContextMenuContent>
+                                <ContextMenuItem onClick={handleAddSnippet}>
+                                    <Plus className="mr-2 h-4 w-4" />
+                                    {getLabel('snippets.action.newSnippet', 'New Snippet')}
+                                </ContextMenuItem>
+                            </ContextMenuContent>
+                        </ContextMenu>
                     )}
                 </div>
             </div>
