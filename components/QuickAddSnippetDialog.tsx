@@ -11,6 +11,7 @@
 import { Package } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../application/i18n/I18nProvider';
+import { cn } from '../lib/utils';
 import type { Snippet } from '../domain/models';
 import { Button } from './ui/button';
 import { Combobox } from './ui/combobox';
@@ -220,19 +221,52 @@ export const QuickAddSnippetDialog: React.FC<QuickAddSnippetDialogProps> = ({
                 {t('common.reset')}
               </Button>
             </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="color"
-                value={iconColor || '#9ca3af'}
-                onChange={(e) => setIconColor(e.target.value)}
-                className="h-8 w-12 cursor-pointer rounded border border-input bg-background p-1"
-              />
-              <Input
-                value={iconColor}
-                onChange={(e) => setIconColor(e.target.value)}
-                placeholder="#9ca3af"
-                className="h-8 font-mono text-xs"
-              />
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  '#9ca3af', // Gray
+                  '#ef4444', // Red
+                  '#f97316', // Orange
+                  '#f59e0b', // Amber
+                  '#eab308', // Yellow
+                  '#84cc16', // Lime
+                  '#22c55e', // Green
+                  '#10b981', // Emerald
+                  '#06b6d4', // Cyan
+                  '#3b82f6', // Blue
+                  '#6366f1', // Indigo
+                  '#8b5cf6', // Violet
+                  '#a855f7', // Purple
+                  '#d946ef', // Fuchsia
+                  '#ec4899', // Pink
+                ].map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    className={cn(
+                      "h-5 w-5 rounded-full border border-white/10 transition-transform hover:scale-110 active:scale-95",
+                      iconColor === color && "ring-2 ring-primary ring-offset-1 ring-offset-background"
+                    )}
+                    style={{ backgroundColor: color }}
+                    onClick={() => setIconColor(color)}
+                    title={color}
+                  />
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={iconColor || '#9ca3af'}
+                  onChange={(e) => setIconColor(e.target.value)}
+                  className="h-8 w-12 cursor-pointer rounded border border-input bg-background p-1"
+                />
+                <Input
+                  value={iconColor}
+                  onChange={(e) => setIconColor(e.target.value)}
+                  placeholder="#9ca3af"
+                  className="h-8 font-mono text-xs"
+                />
+              </div>
             </div>
           </div>
         </div>

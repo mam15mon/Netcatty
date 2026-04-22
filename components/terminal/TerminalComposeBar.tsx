@@ -6,7 +6,7 @@
  * hair-line top border separating it from the terminal output, while
  * preserving Netcatty's send-target and broadcast controls.
  */
-import { Check, Play, Plus, Radio, Trash2, X } from 'lucide-react';
+import { Check, Circle, Plus, Radio, Trash2, X } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { useStoredNumber } from '../../application/state/useStoredNumber';
@@ -274,7 +274,7 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                             value={selectedPackage || allPackagesValue}
                             onValueChange={(value) => setSelectedPackage(value === allPackagesValue ? '' : value)}
                         >
-                            <SelectTrigger className="h-6 w-auto px-2 bg-black/20 border-border/20 hover:bg-white/5 transition-colors gap-1.5 focus:ring-0 focus:ring-offset-0 text-[10px] font-medium tracking-wide flex items-center [&>span]:translate-y-[1.5px]">
+                            <SelectTrigger className="h-6 w-auto px-3 rounded-full bg-black/20 border-border/20 hover:bg-white/5 transition-colors gap-1.5 focus:ring-0 focus:ring-offset-0 text-[10px] font-medium tracking-wide flex items-center [&>span]:translate-y-[1.5px]">
                                 <SelectValue placeholder={getLabel('snippets.breadcrumb.allPackages', 'All Packages')} />
                             </SelectTrigger>
                             <SelectContent className="bg-background border-border/30 z-[1000]">
@@ -299,11 +299,12 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                                                 <button
                                                     type="button"
                                                     onClick={() => handleSnippetExecute(snippet)}
-                                                    className="h-6 px-2 rounded border border-border/50 bg-black/20 hover:bg-white/10 text-[10px] font-medium transition-colors flex items-center gap-1.5"
+                                                    className="h-6 w-auto px-3 rounded-full bg-black/20 border border-border/20 hover:bg-white/5 transition-colors gap-1.5 focus:ring-0 focus:ring-offset-0 text-[10px] font-medium tracking-wide flex items-center [&>span]:translate-y-[1.5px]"
                                                     title={snippet.command}
                                                 >
-                                                    <Play
-                                                        size={10}
+                                                    <Circle
+                                                        size={12}
+                                                        fill="currentColor"
                                                         className={cn(!resolveSnippetIconColor(snippet) && "opacity-70")}
                                                         style={resolveSnippetIconColor(snippet) ? { color: resolveSnippetIconColor(snippet) } : undefined}
                                                     />
@@ -311,26 +312,22 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                                                 </button>
                                             </ContextMenuTrigger>
                                             <ContextMenuContent>
-                                                <ContextMenuItem onClick={() => handleSnippetExecute(snippet)}>
-                                                    <Play
-                                                        className={cn("mr-2 h-4 w-4", !resolveSnippetIconColor(snippet) && "opacity-70")}
-                                                        style={resolveSnippetIconColor(snippet) ? { color: resolveSnippetIconColor(snippet) } : undefined}
-                                                    />
-                                                    {getLabel('action.run', 'Run')}
+                                                <ContextMenuItem onClick={() => handleSnippetExecute(snippet)} className="text-[10px] font-medium tracking-wide">
+                                                    <span className="translate-y-[1px]">{getLabel('action.run', 'Run')}</span>
                                                 </ContextMenuItem>
-                                                <ContextMenuItem onClick={() => handleEditSnippetInline(snippet)}>
-                                                    {getLabel('snippets.action.editInline', 'Edit In Composer')}
+                                                <ContextMenuItem onClick={() => handleEditSnippetInline(snippet)} className="text-[10px] font-medium tracking-wide">
+                                                    <span className="translate-y-[1px]">{getLabel('snippets.action.editInline', 'Edit In Composer')}</span>
                                                 </ContextMenuItem>
-                                                <ContextMenuItem onClick={() => handleEditSnippet(snippet)}>
-                                                    {getLabel('action.edit', 'Edit')}
+                                                <ContextMenuItem onClick={() => handleEditSnippet(snippet)} className="text-[10px] font-medium tracking-wide">
+                                                    <span className="translate-y-[1px]">{getLabel('action.edit', 'Edit')}</span>
                                                 </ContextMenuItem>
                                                 <ContextMenuSeparator />
                                                 <ContextMenuItem
-                                                    className="text-destructive"
+                                                    className="text-destructive text-[10px] font-medium tracking-wide"
                                                     onClick={() => handleDeleteSnippet(snippet.id)}
                                                 >
-                                                    <Trash2 className="mr-2 h-4 w-4" />
-                                                    {getLabel('action.delete', 'Delete')}
+                                                    <Trash2 className="mr-2 h-3 w-3" />
+                                                    <span className="translate-y-[1px]">{getLabel('action.delete', 'Delete')}</span>
                                                 </ContextMenuItem>
                                             </ContextMenuContent>
                                         </ContextMenu>
@@ -348,7 +345,7 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                                 <button
                                     onClick={onToggleBroadcast}
                                     className={cn(
-                                        "h-6 px-2 flex items-center gap-1.5 rounded transition-all",
+                                        "h-6 px-3 flex items-center gap-1.5 rounded-full transition-all",
                                         isBroadcastEnabled ? "bg-amber-500/10 text-amber-500" : "hover:bg-white/5 opacity-60"
                                     )}
                                 >
@@ -359,7 +356,7 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
 
                             <button
                                 onClick={onClose}
-                                className="h-6 w-6 flex items-center justify-center rounded hover:bg-destructive/10 hover:text-destructive transition-all opacity-50"
+                                className="h-6 w-6 flex items-center justify-center rounded-full hover:bg-destructive/10 hover:text-destructive transition-all opacity-50"
                                 title={getLabel("terminal.composeBar.close", "Close")}
                             >
                                 <X size={14} />
@@ -368,9 +365,9 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                     </div>
                 </ContextMenuTrigger>
                 <ContextMenuContent>
-                    <ContextMenuItem onClick={handleAddSnippet}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        {getLabel('snippets.menu.newButton', 'New Button...')}
+                    <ContextMenuItem onClick={handleAddSnippet} className="text-[10px] font-medium tracking-wide">
+                        <Plus className="mr-2 h-3 w-3" />
+                        <span className="translate-y-[1px]">{getLabel('snippets.menu.newButton', 'New Button...')}</span>
                     </ContextMenuItem>
                 </ContextMenuContent>
             </ContextMenu>
@@ -406,9 +403,9 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                                         ? getLabel("terminal.composeBar.sendTarget.currentTab", "Active Tab")
                                         : getLabel("terminal.composeBar.sendTarget.allSessions", "All Sessions");
                                 return (
-                                    <ContextMenuItem key={target} onClick={() => onSendTargetChange(target)}>
-                                        <Check className={cn("mr-2 h-4 w-4", selected ? "opacity-100" : "opacity-0")} />
-                                        {label}
+                                    <ContextMenuItem key={target} onClick={() => onSendTargetChange(target)} className={cn("text-[10px] font-medium tracking-wide", selected && "font-bold text-primary")}>
+                                        <Check className={cn("mr-2 h-3 w-3", selected ? "opacity-100" : "opacity-0")} />
+                                        <span className="translate-y-[1px]">{label}</span>
                                     </ContextMenuItem>
                                 );
                             })}
