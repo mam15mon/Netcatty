@@ -6,12 +6,12 @@
  * hair-line top border separating it from the terminal output, while
  * preserving Netcatty's send-target and broadcast controls.
  */
-import { GripHorizontal, Radio, X } from 'lucide-react';
+import { Radio, X } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../../application/i18n/I18nProvider';
+import { useStoredNumber } from '../../application/state/useStoredNumber';
 import { cn } from '../../lib/utils';
 import { STORAGE_KEY_TERM_COMPOSE_BAR_HEIGHT } from '../../infrastructure/config/storageKeys';
-import { localStorageAdapter } from '../../infrastructure/persistence/localStorageAdapter';
 
 import {
     Select,
@@ -116,17 +116,13 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
         textareaRef.current?.focus();
     }, [inputValue, onSend, setComposeText]);
 
-    const [composeHeight, setComposeHeight] = useState(() => {
-        return localStorageAdapter.readNumber(STORAGE_KEY_TERM_COMPOSE_BAR_HEIGHT) || 120;
-    });
+    const [composeHeight, setComposeHeight, persistComposeHeight] = useStoredNumber(
+        STORAGE_KEY_TERM_COMPOSE_BAR_HEIGHT,
+        120,
+        { min: 60, max: 600 },
+    );
+    const composeHeightRef = useRef(composeHeight);
     const isResizing = useRef(false);
-
-    const stopResizing = useCallback(() => {
-        isResizing.current = false;
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', stopResizing);
-        document.body.style.cursor = '';
-    }, []);
 
     const handleMouseMove = useCallback((e: MouseEvent) => {
         if (!isResizing.current) return;
@@ -134,9 +130,16 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
         const newHeight = window.innerHeight - e.clientY;
         if (newHeight >= 60 && newHeight <= 600) {
             setComposeHeight(newHeight);
-            localStorageAdapter.writeNumber(STORAGE_KEY_TERM_COMPOSE_BAR_HEIGHT, newHeight);
         }
-    }, []);
+    }, [setComposeHeight]);
+
+    const stopResizing = useCallback(() => {
+        isResizing.current = false;
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', stopResizing);
+        document.body.style.cursor = '';
+        persistComposeHeight(composeHeightRef.current);
+    }, [handleMouseMove, persistComposeHeight]);
 
     const startResizing = useCallback((e: React.MouseEvent) => {
         e.preventDefault();
@@ -145,6 +148,12 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
         document.addEventListener('mouseup', stopResizing);
         document.body.style.cursor = 'ns-resize';
     }, [handleMouseMove, stopResizing]);
+
+    useEffect(() => {
+        composeHeightRef.current = composeHeight;
+    }, [composeHeight]);
+
+    useEffect(() => () => stopResizing(), [stopResizing]);
 
     const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === 'Enter' && !e.shiftKey && !isComposingRef.current) {
