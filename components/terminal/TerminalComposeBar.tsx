@@ -6,10 +6,12 @@
  * hair-line top border separating it from the terminal output, while
  * preserving Netcatty's send-target and broadcast controls.
  */
-import { Radio, X } from 'lucide-react';
+import { GripHorizontal, Radio, X } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { cn } from '../../lib/utils';
+import { STORAGE_KEY_TERM_COMPOSE_BAR_HEIGHT } from '../../infrastructure/config/storageKeys';
+import { localStorageAdapter } from '../../infrastructure/persistence/localStorageAdapter';
 
 import {
     Select,
@@ -114,6 +116,36 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
         textareaRef.current?.focus();
     }, [inputValue, onSend, setComposeText]);
 
+    const [composeHeight, setComposeHeight] = useState(() => {
+        return localStorageAdapter.readNumber(STORAGE_KEY_TERM_COMPOSE_BAR_HEIGHT) || 120;
+    });
+    const isResizing = useRef(false);
+
+    const stopResizing = useCallback(() => {
+        isResizing.current = false;
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', stopResizing);
+        document.body.style.cursor = '';
+    }, []);
+
+    const handleMouseMove = useCallback((e: MouseEvent) => {
+        if (!isResizing.current) return;
+        // The bar is at the bottom, so we increase height as mouse moves UP (smaller clientY)
+        const newHeight = window.innerHeight - e.clientY;
+        if (newHeight >= 60 && newHeight <= 600) {
+            setComposeHeight(newHeight);
+            localStorageAdapter.writeNumber(STORAGE_KEY_TERM_COMPOSE_BAR_HEIGHT, newHeight);
+        }
+    }, []);
+
+    const startResizing = useCallback((e: React.MouseEvent) => {
+        e.preventDefault();
+        isResizing.current = true;
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', stopResizing);
+        document.body.style.cursor = 'ns-resize';
+    }, [handleMouseMove, stopResizing]);
+
     const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === 'Enter' && !e.shiftKey && !isComposingRef.current) {
             e.preventDefault();
@@ -131,13 +163,22 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
 
     return (
         <div
-            className="flex-shrink-0 flex flex-col w-full text-xs font-sans select-none"
+            className="flex-shrink-0 flex flex-col w-full text-xs font-sans select-none relative group/compose"
             style={{
                 backgroundColor: resolvedBg,
                 color: resolvedFg,
                 borderTop: `1px solid color-mix(in srgb, ${resolvedFg} 8%, ${resolvedBg} 92%)`,
+                height: `${composeHeight}px`,
             }}
         >
+            {/* Resize Handle */}
+            <div
+                className="absolute -top-1 left-0 right-0 h-2 cursor-ns-resize z-50 flex items-center justify-center"
+                onMouseDown={startResizing}
+            >
+                <div className="w-12 h-1 rounded-full bg-primary/0 group-hover/compose:bg-primary/20 transition-colors" />
+            </div>
+
             <div
                 className="flex items-center h-8 px-3 gap-2"
                 style={{
@@ -199,18 +240,16 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                 </div>
             </div>
 
-            <div className="relative w-full px-3 py-2">
+            <div className="relative w-full px-3 py-2 flex-1 min-h-0">
                 <textarea
                     ref={textareaRef}
                     className={cn(
-                        "w-full resize-none bg-transparent text-[13px] font-mono leading-relaxed",
-                        "outline-none transition-all duration-200 block border-none",
+                        "w-full h-full resize-none bg-transparent text-[13px] font-mono leading-relaxed",
+                        "outline-none transition-all duration-200 block border-none scrollbar-thin",
                         "placeholder:opacity-70",
                     )}
                     style={{
                         color: resolvedFg,
-                        minHeight: '20px',
-                        maxHeight: '120px',
                     }}
                     value={inputValue}
                     placeholder={getLabel("terminal.composeBar.placeholder", "Enter commands to send to session...")}
