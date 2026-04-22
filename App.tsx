@@ -1836,15 +1836,17 @@ function App({ settings }: { settings: SettingsState }) {
 
   useEffect(() => {
     const handler = () => {
+      setActiveTabId('vault');
       setNavigateToSection('snippets');
     };
     window.addEventListener('netcatty:snippets:manage', handler);
     return () => window.removeEventListener('netcatty:snippets:manage', handler);
-  }, []);
+  }, [setActiveTabId]);
 
   useEffect(() => {
     const timeoutIds: number[] = [];
     const handler = () => {
+      setActiveTabId('vault');
       setNavigateToSection('snippets');
       const timer = window.setTimeout(() => {
         window.dispatchEvent(new CustomEvent('netcatty:snippets:open-new-package-dialog'));
@@ -1856,7 +1858,7 @@ function App({ settings }: { settings: SettingsState }) {
       window.removeEventListener('netcatty:snippets:new-package', handler);
       timeoutIds.forEach((id) => window.clearTimeout(id));
     };
-  }, []);
+  }, [setActiveTabId]);
 
   const handleEndSessionDrag = useCallback(() => {
     setDraggingSessionId(null);
