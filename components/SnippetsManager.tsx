@@ -107,8 +107,18 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
       setNewPackageName('');
       setIsPackageDialogOpen(true);
     };
+    const renameHandler = (e: Event) => {
+      const path = (e as CustomEvent<{ path: string }>).detail?.path;
+      if (path) {
+        openRenameDialog(path);
+      }
+    };
     window.addEventListener('netcatty:snippets:open-new-package-dialog', handler);
-    return () => window.removeEventListener('netcatty:snippets:open-new-package-dialog', handler);
+    window.addEventListener('netcatty:snippets:open-rename-package-dialog', renameHandler);
+    return () => {
+      window.removeEventListener('netcatty:snippets:open-new-package-dialog', handler);
+      window.removeEventListener('netcatty:snippets:open-rename-package-dialog', renameHandler);
+    };
   }, []);
 
   const existingShortkeys = useMemo(() => (

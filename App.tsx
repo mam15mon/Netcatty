@@ -1860,6 +1860,50 @@ function App({ settings }: { settings: SettingsState }) {
     };
   }, [setActiveTabId]);
 
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const path = (e as CustomEvent<{ path: string }>).detail?.path;
+      if (!path) return;
+      
+      const confirmed = window.confirm(t('snippets.deletePackage.confirm', { name: path.split('/').pop() || path }));
+      if (!confirmed) return;
+
+      const keep = snippetPackages.filter((p) => !(p === path || p.startsWith(path + '/')));
+      const updatedSnippets = snippets.map((s) => {
+        if (!s.package) return s;
+        if (s.package === path || s.package.startsWith(path + '/')) {
+          return { ...s, package: '' };
+        }
+        return s;
+      });
+      
+      updateSnippetPackages(keep);
+      updateSnippets(updatedSnippets);
+    };
+    window.addEventListener('netcatty:snippets:package-delete', handler);
+    return () => window.removeEventListener('netcatty:snippets:package-delete', handler);
+  }, [snippetPackages, snippets, updateSnippetPackages, updateSnippets, t]);
+
+  useEffect(() => {
+    const timeoutIds: number[] = [];
+    const handler = (e: Event) => {
+      const path = (e as CustomEvent<{ path: string }>).detail?.path;
+      if (!path) return;
+
+      setActiveTabId('vault');
+      setNavigateToSection('snippets');
+      const timer = window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('netcatty:snippets:open-rename-package-dialog', { detail: { path } }));
+      }, 150);
+      timeoutIds.push(timer);
+    };
+    window.addEventListener('netcatty:snippets:package-rename', handler);
+    return () => {
+      window.removeEventListener('netcatty:snippets:package-rename', handler);
+      timeoutIds.forEach((id) => window.clearTimeout(id));
+    };
+  }, [setActiveTabId]);
+
   const handleEndSessionDrag = useCallback(() => {
     setDraggingSessionId(null);
   }, [setDraggingSessionId]);

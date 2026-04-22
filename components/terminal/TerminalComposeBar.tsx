@@ -197,6 +197,7 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
         120,
         { min: 60, max: 600 },
     );
+    const [resizing, setResizing] = useState(false);
     const composeHeightRef = useRef(composeHeight);
     const isResizing = useRef(false);
 
@@ -211,6 +212,7 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
 
     const stopResizing = useCallback(() => {
         isResizing.current = false;
+        setResizing(false);
         document.removeEventListener('mousemove', handleMouseMove);
         document.removeEventListener('mouseup', stopResizing);
         document.body.style.cursor = '';
@@ -220,6 +222,7 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
     const startResizing = useCallback((e: React.MouseEvent) => {
         e.preventDefault();
         isResizing.current = true;
+        setResizing(true);
         document.addEventListener('mousemove', handleMouseMove);
         document.addEventListener('mouseup', stopResizing);
         document.body.style.cursor = 'ns-resize';
@@ -256,11 +259,19 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                 height: `${composeHeight}px`,
             }}
         >
-            {/* Resize Handle (Invisible, cursor only) */}
+            {/* Resize Handle */}
             <div
-                className="absolute -top-1 left-0 right-0 h-2 cursor-ns-resize z-50"
+                className="absolute -top-1 left-0 right-0 h-2 cursor-ns-resize z-50 group"
                 onMouseDown={startResizing}
-            />
+            >
+                <div 
+                    className={cn(
+                        "absolute left-0 right-0 h-px bg-primary/60 transition-opacity",
+                        resizing ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                    )}
+                    style={{ top: '50%', transform: 'translateY(-50%)' }}
+                />
+            </div>
 
             <ContextMenu>
                 <ContextMenuTrigger asChild>
@@ -386,7 +397,7 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                                 color: resolvedFg,
                             }}
                             value={inputValue}
-                            placeholder={`${getLabel("terminal.composeBar.placeholder", "Type command here, press Enter to send (right-click to choose send target)...")} (${targetLabel})`}
+                            placeholder={`${getLabel("terminal.composeBar.placeholder", "Send command to")} ${targetLabel}...`}
                             onInput={(e) => setComposeText(e.currentTarget.value)}
                             onKeyDown={handleKeyDown}
                             onCompositionStart={() => { isComposingRef.current = true; }}
