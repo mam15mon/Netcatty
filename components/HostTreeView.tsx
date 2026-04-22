@@ -215,11 +215,11 @@ const TreeNode: React.FC<TreeNodeProps> = React.memo(({
               </div>
             </CollapsibleTrigger>
           </ContextMenuTrigger>
-          <ContextMenuContent>
-            <ContextMenuItem onClick={() => onNewHost(node.path)}>
+          <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
+            <ContextMenuItem onSelect={() => onNewHost(node.path)}>
               <Server className="mr-2 h-4 w-4" /> {t("vault.hosts.newHost")}
             </ContextMenuItem>
-            <ContextMenuItem onClick={() => onNewGroup(node.path)}>
+            <ContextMenuItem onSelect={() => onNewGroup(node.path)}>
               <Folder className="mr-2 h-4 w-4" /> {t("vault.hosts.newGroup")}
             </ContextMenuItem>
             <ContextMenuItem onClick={() => onEditGroup(node.path)}>

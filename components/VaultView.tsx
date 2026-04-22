@@ -223,6 +223,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
   const [isNewFolderOpen, setIsNewFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [targetParentPath, setTargetParentPath] = useState<string | null>(null);
+  const newFolderInputRef = useRef<HTMLInputElement | null>(null);
   const [isRenameGroupOpen, setIsRenameGroupOpen] = useState(false);
   const [renameTargetPath, setRenameTargetPath] = useState<string | null>(null);
   const [renameGroupName, setRenameGroupName] = useState("");
@@ -2498,9 +2499,9 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                               </div>
                             </div>
                           </ContextMenuTrigger>
-                          <ContextMenuContent>
+                          <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
                             <ContextMenuItem
-                              onClick={() => {
+                              onSelect={() => {
                                 setTargetParentPath(node.path);
                                 setNewFolderName("");
                                 setIsNewFolderOpen(true);
@@ -3102,7 +3103,14 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
           setTargetParentPath(null);
         }
       }}>
-        <DialogContent>
+        <DialogContent
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            window.requestAnimationFrame(() => {
+              newFolderInputRef.current?.focus();
+            });
+          }}
+        >
           <DialogHeader>
             <DialogTitle>
               {targetParentPath
@@ -3116,10 +3124,10 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
           <div className="py-4">
             <Label>{t("vault.groups.field.name")}</Label>
             <Input
+              ref={newFolderInputRef}
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
               placeholder={t("vault.groups.placeholder.example")}
-              autoFocus
               onKeyDown={(e) => e.key === "Enter" && submitNewFolder()}
             />
             {targetParentPath && (

@@ -684,6 +684,7 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
           <Input
             placeholder={t("hostDetails.label.placeholder")}
             value={form.label}
+            autoFocus
             onChange={(e) => {
               let value = e.target.value;
               // Only strip spaces if the TARGET group belongs to a managed source

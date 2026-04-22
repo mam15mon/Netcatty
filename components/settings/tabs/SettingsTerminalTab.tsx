@@ -14,6 +14,7 @@ import { TERMINAL_THEMES } from "../../../infrastructure/config/terminalThemes";
 import { customThemeStore, useCustomThemes } from "../../../application/state/customThemeStore";
 import { parseItermcolors } from "../../../infrastructure/parsers/itermcolorsParser";
 import { cn } from "../../../lib/utils";
+import { isSafeRegexPattern } from "../../../lib/regexSafety";
 import { useDiscoveredShells } from "../../../lib/useDiscoveredShells";
 import { Button } from "../../ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "../../ui/dialog";
@@ -56,6 +57,10 @@ const AddCustomRuleDialog: React.FC<{
 
   const handleSubmit = () => {
     if (!label.trim() || !pattern.trim()) return;
+    if (!isSafeRegexPattern(pattern)) {
+      setPatternError(t('settings.terminal.keywordHighlight.invalidPattern'));
+      return;
+    }
     try { new RegExp(pattern, 'gi'); } catch {
       setPatternError(t('settings.terminal.keywordHighlight.invalidPattern'));
       return;

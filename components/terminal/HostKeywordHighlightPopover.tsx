@@ -6,6 +6,7 @@ import { Highlighter, Plus, Trash2, RotateCcw } from 'lucide-react';
 import React, { useState, useCallback, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useI18n } from '../../application/i18n/I18nProvider';
+import { isSafeRegexPattern } from '../../lib/regexSafety';
 import { Host, KeywordHighlightRule } from '../../types';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -49,6 +50,9 @@ export const HostKeywordHighlightPopover: React.FC<HostKeywordHighlightPopoverPr
   }, [host, onUpdateHost, enabled]);
 
   const validatePattern = (pattern: string): boolean => {
+    if (!isSafeRegexPattern(pattern)) {
+      return false;
+    }
     try {
       new RegExp(pattern, 'gi');
       return true;

@@ -1,20 +1,23 @@
 
-import { Terminal as XTerm, IDecoration, IDisposable, IMarker, IBufferLine } from "@xterm/xterm";
+import { Terminal as XTerm, IDecoration, IDisposable, IMarker, IBuffer, IBufferLine } from "@xterm/xterm";
 import { KeywordHighlightRule } from "../../types";
 
 import { XTERM_PERFORMANCE_CONFIG } from "../../infrastructure/config/xtermPerformance";
+import { isSafeRegexPattern } from "../../lib/regexSafety";
 import { forEachNonEmptyRegexMatch } from "./keywordHighlightRegex";
 
 /** Pre-compiled rule with regex ready for matching */
 interface CompiledRule {
   regex: RegExp;
   color: string;
+  priority: number;
 }
 
 interface CachedDecorationRange {
   x: number;
   width: number;
   color: string;
+  priority: number;
 }
 
 interface DirtyLineSegment {
@@ -120,14 +123,19 @@ export class KeywordHighlighter implements IDisposable {
     // Pre-compile all patterns into regexes for better performance
     // This avoids creating new RegExp objects on every viewport refresh
     this.compiledRules = [];
-    for (const rule of rules) {
+    for (const [ruleIndex, rule] of rules.entries()) {
       if (!rule.enabled || rule.patterns.length === 0) continue;
       for (const pattern of rule.patterns) {
         if (!pattern) continue;  // Skip empty patterns — RegExp("") is valid but matches nothing useful
+        if (!isSafeRegexPattern(pattern)) {
+          console.warn("[KeywordHighlight] Skipping unsafe regex pattern:", pattern);
+          continue;
+        }
         try {
           this.compiledRules.push({
             regex: new RegExp(pattern, "gi"),
             color: rule.color,
+            priority: ruleIndex,
           });
         } catch (err) {
           console.error("Invalid regex pattern:", pattern, err);
@@ -194,10 +202,29 @@ export class KeywordHighlighter implements IDisposable {
   private disposeLineDecorations(lineY: number, state?: LineDecorationState) {
     const target = state ?? this.lineDecorations.get(lineY);
     if (!target) return;
+    const removedLineY = this.removeLineDecorationState(target, lineY);
+    const markerLineBeforeDispose = target.marker.isDisposed ? -1 : target.marker.line;
     target.decorations.forEach((decoration) => decoration.dispose());
     target.marker.dispose();
-    this.lineDecorations.delete(lineY);
-    this.markTerminalRefreshNeeded(lineY);
+    const refreshLine = removedLineY ?? (markerLineBeforeDispose >= 0 ? markerLineBeforeDispose : lineY);
+    this.markTerminalRefreshNeeded(refreshLine);
+  }
+
+  private removeLineDecorationState(target: LineDecorationState, lineHint?: number): number | null {
+    if (lineHint != null) {
+      const hinted = this.lineDecorations.get(lineHint);
+      if (hinted === target) {
+        this.lineDecorations.delete(lineHint);
+        return lineHint;
+      }
+    }
+    for (const [mappedLineY, mappedState] of this.lineDecorations) {
+      if (mappedState === target) {
+        this.lineDecorations.delete(mappedLineY);
+        return mappedLineY;
+      }
+    }
+    return null;
   }
 
   private buildRangesSignature(ranges: readonly CachedDecorationRange[]): string {
@@ -337,6 +364,14 @@ export class KeywordHighlighter implements IDisposable {
         }
         this.executeRefresh();
       });
+      // Hidden/background tabs may pause rAF. Keep a timer fallback so
+      // continuation does not stall indefinitely.
+      if (!this.debounceTimer) {
+        this.debounceTimer = setTimeout(() => {
+          this.debounceTimer = null;
+          this.executeRefresh();
+        }, this.getAdaptiveHighlightingProfile().debounceMs);
+      }
       return;
     }
 
@@ -514,20 +549,35 @@ export class KeywordHighlighter implements IDisposable {
 
   private reindexLineDecorationsFromMarkers() {
     if (this.lineDecorations.size === 0) return;
-    const entries = Array.from(this.lineDecorations.entries());
-    for (const [lineY, state] of entries) {
+    const nextLineDecorations = new Map<number, LineDecorationState>();
+    const staleStates = new Set<LineDecorationState>();
+
+    for (const state of this.lineDecorations.values()) {
       if (state.marker.isDisposed || state.marker.line < 0) {
-        this.disposeLineDecorations(lineY, state);
+        staleStates.add(state);
         continue;
       }
       const markerLine = state.marker.line;
-      if (markerLine === lineY) continue;
-      this.lineDecorations.delete(lineY);
-      const existing = this.lineDecorations.get(markerLine);
+      const existing = nextLineDecorations.get(markerLine);
       if (existing && existing !== state) {
-        this.disposeLineDecorations(markerLine, existing);
+        staleStates.add(existing);
       }
-      this.lineDecorations.set(markerLine, state);
+      nextLineDecorations.set(markerLine, state);
+    }
+
+    for (const state of nextLineDecorations.values()) {
+      staleStates.delete(state);
+    }
+
+    this.lineDecorations = nextLineDecorations;
+
+    for (const state of staleStates) {
+      const markerLineBeforeDispose = state.marker.isDisposed ? -1 : state.marker.line;
+      state.decorations.forEach((decoration) => decoration.dispose());
+      state.marker.dispose();
+      if (markerLineBeforeDispose >= 0) {
+        this.markTerminalRefreshNeeded(markerLineBeforeDispose);
+      }
     }
   }
 
@@ -865,7 +915,10 @@ export class KeywordHighlighter implements IDisposable {
         continue;
       }
 
-      const cachedRanges = this.getCachedRanges(line, lineText);
+      const hasWrappedContext = this.hasWrappedNeighbor(buffer, lineY, line);
+      const cachedRanges = hasWrappedContext
+        ? this.scanWrappedLine(buffer, lineY, line, lineText)
+        : this.getCachedRanges(line, lineText);
       if (cachedRanges.length === 0) {
         this.disposeLineDecorations(lineY);
         continue;
@@ -910,6 +963,115 @@ export class KeywordHighlighter implements IDisposable {
     return ranges;
   }
 
+  private hasWrappedNeighbor(buffer: IBuffer, lineY: number, line: IBufferLine): boolean {
+    if (line.isWrapped) return true;
+    const nextLine = buffer.getLine(lineY + 1);
+    return !!nextLine?.isWrapped;
+  }
+
+  private buildWrappedContext(buffer: IBuffer, lineY: number): {
+    logicalLineText: string;
+    lineStart: number;
+    lineEnd: number;
+  } | null {
+    let startY = lineY;
+    while (startY > 0) {
+      const current = buffer.getLine(startY);
+      if (!current?.isWrapped) break;
+      startY -= 1;
+    }
+
+    let logicalLineText = "";
+    let lineStart = -1;
+    let lineEnd = -1;
+    let cursorY = startY;
+
+    while (true) {
+      const segment = buffer.getLine(cursorY);
+      if (!segment) break;
+      const segmentText = segment.translateToString(true);
+      if (cursorY === lineY) {
+        lineStart = logicalLineText.length;
+        lineEnd = lineStart + segmentText.length;
+      }
+      logicalLineText += segmentText;
+
+      const nextLine = buffer.getLine(cursorY + 1);
+      if (!nextLine?.isWrapped) break;
+      cursorY += 1;
+    }
+
+    if (lineStart < 0 || lineEnd < 0) return null;
+    return { logicalLineText, lineStart, lineEnd };
+  }
+
+  private scanWrappedLine(
+    buffer: IBuffer,
+    lineY: number,
+    line: IBufferLine,
+    lineText: string
+  ): CachedDecorationRange[] {
+    const context = this.buildWrappedContext(buffer, lineY);
+    if (!context || context.logicalLineText === lineText) {
+      return this.scanLine(line, lineText);
+    }
+
+    const asciiOnly = RE_ASCII_ONLY.test(lineText);
+    let cellMap: number[] | null = null;
+    let ranges: CachedDecorationRange[] | null = null;
+
+    for (const { regex, color, priority } of this.compiledRules) {
+      forEachNonEmptyRegexMatch(regex, context.logicalLineText, (match) => {
+        const matchStart = match.index;
+        const matchEnd = matchStart + match[0].length;
+        if (matchEnd <= context.lineStart || matchStart >= context.lineEnd) {
+          return;
+        }
+
+        const localStart = Math.max(matchStart, context.lineStart) - context.lineStart;
+        const localEnd = Math.min(matchEnd, context.lineEnd) - context.lineStart;
+        if (localEnd <= localStart) return;
+
+        let cellStartCol: number;
+        let cellEndCol: number;
+
+        if (asciiOnly) {
+          cellStartCol = localStart;
+          cellEndCol = localEnd;
+        } else {
+          if (cellMap === null) {
+            cellMap = this.buildStringToCellMap(line);
+          }
+          cellStartCol = cellMap[localStart] ?? localStart;
+          cellEndCol = localEnd < cellMap.length
+            ? (cellMap[localEnd] ?? localEnd)
+            : (cellMap[cellMap.length - 1] ?? localEnd);
+        }
+
+        const cellWidth = cellEndCol - cellStartCol;
+        if (cellWidth <= 0) return;
+
+        if (ranges === null) {
+          ranges = [];
+        }
+        ranges.push({
+          x: cellStartCol,
+          width: cellWidth,
+          color,
+          priority,
+        });
+      });
+    }
+
+    if (!ranges || ranges.length === 0) {
+      return EMPTY_RANGES as CachedDecorationRange[];
+    }
+    if (ranges.length === 1) {
+      return ranges;
+    }
+    return this.mergeDecorationRanges(ranges);
+  }
+
   private scanLine(line: IBufferLine, lineText: string): CachedDecorationRange[] {
     // ASCII-only lines have a 1:1 string-index-to-cell-column mapping,
     // so we can skip the expensive buildStringToCellMap call entirely.
@@ -918,7 +1080,7 @@ export class KeywordHighlighter implements IDisposable {
     let ranges: CachedDecorationRange[] | null = null;
 
     // Process each pre-compiled rule
-    for (const { regex, color } of this.compiledRules) {
+    for (const { regex, color, priority } of this.compiledRules) {
       forEachNonEmptyRegexMatch(regex, lineText, (match) => {
         const strStart = match.index;
         const strEnd = strStart + match[0].length;
@@ -952,6 +1114,7 @@ export class KeywordHighlighter implements IDisposable {
           x: cellStartCol,
           width: cellWidth,
           color,
+          priority,
         });
       });
     }
@@ -966,17 +1129,16 @@ export class KeywordHighlighter implements IDisposable {
   }
 
   private mergeDecorationRanges(ranges: CachedDecorationRange[]): CachedDecorationRange[] {
-    // Sort by color first, then by x position so overlapping same-color
-    // ranges from different rules are adjacent and can be merged.
-    ranges.sort((a, b) =>
-      a.color < b.color ? -1 : a.color > b.color ? 1 : a.x - b.x
-    );
+    // Preserve rule priority (lower index first), and only merge ranges
+    // within the same priority/color layer.
+    ranges.sort((a, b) => a.priority - b.priority || a.x - b.x);
     const merged: CachedDecorationRange[] = [ranges[0]];
 
     for (let index = 1; index < ranges.length; index += 1) {
       const current = ranges[index];
       const previous = merged[merged.length - 1];
       if (
+        current.priority === previous.priority &&
         current.color === previous.color &&
         current.x >= previous.x &&
         current.x <= previous.x + previous.width
