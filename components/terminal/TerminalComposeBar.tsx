@@ -6,7 +6,7 @@
  * hair-line top border separating it from the terminal output, while
  * preserving Netcatty's send-target and broadcast controls.
  */
-import { Check, Play, Plus, Radio, X } from 'lucide-react';
+import { Check, Play, Plus, Radio, Trash2, X } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { useStoredNumber } from '../../application/state/useStoredNumber';
@@ -196,6 +196,10 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
         window.dispatchEvent(new CustomEvent('netcatty:snippets:new-package'));
     }, []);
 
+    const handleDeleteSnippet = useCallback((snippetId: string) => {
+        window.dispatchEvent(new CustomEvent('netcatty:snippets:delete', { detail: { id: snippetId } }));
+    }, []);
+
     const [composeHeight, setComposeHeight, persistComposeHeight] = useStoredNumber(
         STORAGE_KEY_TERM_COMPOSE_BAR_HEIGHT,
         120,
@@ -327,6 +331,14 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                                                 </ContextMenuItem>
                                                 <ContextMenuItem onClick={() => handleEditSnippet(snippet)}>
                                                     {getLabel('action.edit', 'Edit')}
+                                                </ContextMenuItem>
+                                                <ContextMenuSeparator />
+                                                <ContextMenuItem
+                                                    className="text-destructive"
+                                                    onClick={() => handleDeleteSnippet(snippet.id)}
+                                                >
+                                                    <Trash2 className="mr-2 h-4 w-4" />
+                                                    {getLabel('action.delete', 'Delete')}
                                                 </ContextMenuItem>
                                             </ContextMenuContent>
                                         </ContextMenu>
