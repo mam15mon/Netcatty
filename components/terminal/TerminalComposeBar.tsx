@@ -133,6 +133,11 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
             .sort((a, b) => a.label.localeCompare(b.label));
     }, [selectedPackage, snippets]);
 
+    const resolveSnippetIconColor = useCallback((snippet: Snippet) => {
+        const color = snippet.iconColor?.trim();
+        return color || undefined;
+    }, []);
+
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const isComposingRef = useRef(false);
     const [internalValue, setInternalValue] = useState('');
@@ -355,13 +360,20 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                                                 className="h-6 px-2 rounded border border-border/50 bg-black/20 hover:bg-white/10 text-[10px] font-medium transition-colors flex items-center gap-1.5"
                                                 title={snippet.command}
                                             >
-                                                <Play size={10} className="opacity-70" />
+                                                <Play
+                                                    size={10}
+                                                    className={cn(!resolveSnippetIconColor(snippet) && "opacity-70")}
+                                                    style={resolveSnippetIconColor(snippet) ? { color: resolveSnippetIconColor(snippet) } : undefined}
+                                                />
                                                 <span className="max-w-[140px] truncate">{snippet.label}</span>
                                             </button>
                                         </ContextMenuTrigger>
                                         <ContextMenuContent>
                                             <ContextMenuItem onClick={() => handleSnippetExecute(snippet)}>
-                                                <Play className="mr-2 h-4 w-4" />
+                                                <Play
+                                                    className={cn("mr-2 h-4 w-4", !resolveSnippetIconColor(snippet) && "opacity-70")}
+                                                    style={resolveSnippetIconColor(snippet) ? { color: resolveSnippetIconColor(snippet) } : undefined}
+                                                />
                                                 {getLabel('action.run', 'Run')}
                                             </ContextMenuItem>
                                             <ContextMenuItem onClick={() => handleEditSnippetInline(snippet)}>

@@ -69,6 +69,7 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
     label: '',
     command: '',
     package: '',
+    iconColor: undefined,
     targets: [],
   });
   const [targetSelection, setTargetSelection] = useState<string[]>([]);
@@ -296,6 +297,7 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
         label: '',
         command: '',
         package: selectedPackage || '',
+        iconColor: undefined,
         targets: []
       });
       setTargetSelection([]);
@@ -311,6 +313,7 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
         command: editingSnippet.command,
         tags: editingSnippet.tags || [],
         package: editingSnippet.package || '',
+        iconColor: editingSnippet.iconColor?.trim() || undefined,
         targets: targetSelection,
         shortkey: editingSnippet.shortkey,
         noAutoRun: editingSnippet.noAutoRun,
@@ -327,7 +330,7 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
 
   const handleClosePanel = () => {
     setRightPanelMode('none');
-    setEditingSnippet({ label: '', command: '', package: '', targets: [] });
+    setEditingSnippet({ label: '', command: '', package: '', iconColor: undefined, targets: [] });
     setTargetSelection([]);
   };
 
@@ -828,6 +831,38 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
                 value={editingSnippet.command || ''}
                 onChange={(e) => setEditingSnippet({ ...editingSnippet, command: e.target.value })}
               />
+            </Card>
+
+            {/* Icon Color */}
+            <Card className="p-3 space-y-2 bg-card border-border/80">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-muted-foreground">{t('snippets.field.iconColor')}</p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => setEditingSnippet(prev => ({ ...prev, iconColor: undefined }))}
+                >
+                  {t('common.reset')}
+                </Button>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={editingSnippet.iconColor || '#9ca3af'}
+                  onChange={(e) => setEditingSnippet(prev => ({ ...prev, iconColor: e.target.value }))}
+                  className="h-8 w-12 cursor-pointer rounded border border-input bg-background p-1"
+                />
+                <Input
+                  value={editingSnippet.iconColor || ''}
+                  onChange={(e) => {
+                    const next = e.target.value.trim();
+                    setEditingSnippet(prev => ({ ...prev, iconColor: next || undefined }));
+                  }}
+                  placeholder="#9ca3af"
+                  className="h-8 font-mono text-xs"
+                />
+              </div>
             </Card>
 
             {/* No Auto Run */}

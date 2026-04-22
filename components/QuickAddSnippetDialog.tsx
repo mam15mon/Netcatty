@@ -46,6 +46,7 @@ export const QuickAddSnippetDialog: React.FC<QuickAddSnippetDialogProps> = ({
   const [label, setLabel] = useState('');
   const [command, setCommand] = useState('');
   const [packagePath, setPackagePath] = useState('');
+  const [iconColor, setIconColor] = useState('');
   const [editing, setEditing] = useState<Snippet | null>(null);
   const labelInputRef = useRef<HTMLInputElement>(null);
 
@@ -58,6 +59,7 @@ export const QuickAddSnippetDialog: React.FC<QuickAddSnippetDialogProps> = ({
       setLabel('');
       setCommand('');
       setPackagePath('');
+      setIconColor('');
       setOpen(true);
     };
     window.addEventListener('netcatty:snippets:add', handler);
@@ -75,6 +77,7 @@ export const QuickAddSnippetDialog: React.FC<QuickAddSnippetDialogProps> = ({
       setLabel(snippet.label ?? '');
       setCommand(snippet.command ?? '');
       setPackagePath(snippet.package ?? '');
+      setIconColor(snippet.iconColor ?? '');
       setOpen(true);
     };
     window.addEventListener('netcatty:snippets:edit', handler);
@@ -121,6 +124,7 @@ export const QuickAddSnippetDialog: React.FC<QuickAddSnippetDialogProps> = ({
         label: label.trim(),
         command,
         package: trimmedPackage || '',
+        iconColor: iconColor.trim() || undefined,
       });
     } else {
       onCreateSnippet({
@@ -129,11 +133,12 @@ export const QuickAddSnippetDialog: React.FC<QuickAddSnippetDialogProps> = ({
         command, // preserve whitespace in multi-line commands
         tags: [],
         package: trimmedPackage || '',
+        iconColor: iconColor.trim() || undefined,
         targets: [],
       });
     }
     setOpen(false);
-  }, [canSave, packagePath, packages, onCreatePackage, onCreateSnippet, onUpdateSnippet, editing, label, command]);
+  }, [canSave, packagePath, packages, onCreatePackage, onCreateSnippet, onUpdateSnippet, editing, label, command, iconColor]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -200,6 +205,35 @@ export const QuickAddSnippetDialog: React.FC<QuickAddSnippetDialogProps> = ({
               onCreateNew={setPackagePath}
               createText={t('snippets.field.createPackage')}
             />
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">{t('snippets.field.iconColor')}</Label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-[11px]"
+                onClick={() => setIconColor('')}
+              >
+                {t('common.reset')}
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={iconColor || '#9ca3af'}
+                onChange={(e) => setIconColor(e.target.value)}
+                className="h-8 w-12 cursor-pointer rounded border border-input bg-background p-1"
+              />
+              <Input
+                value={iconColor}
+                onChange={(e) => setIconColor(e.target.value)}
+                placeholder="#9ca3af"
+                className="h-8 font-mono text-xs"
+              />
+            </div>
           </div>
         </div>
 

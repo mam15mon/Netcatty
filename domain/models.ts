@@ -172,6 +172,7 @@ export interface Snippet {
   command: string; // Multi-line script
   tags?: string[];
   package?: string; // package path
+  iconColor?: string; // Optional icon color for snippet button (CSS color)
   targets?: string[]; // host ids
   shortkey?: string; // Keyboard shortcut to send this snippet in terminal (e.g., "F1", "Ctrl + F1")
   noAutoRun?: boolean; // If true, paste command without executing (no trailing Enter)

@@ -1705,6 +1705,7 @@ const zhCN: Messages = {
   'snippets.field.packagePlaceholder': '选择或创建代码包',
   'snippets.field.createPackage': '创建代码包',
   'snippets.field.scriptRequired': '脚本 *',
+  'snippets.field.iconColor': '图标颜色',
   'snippets.targets.title': '目标主机',
   'snippets.targets.add': '添加目标主机',
   'snippets.history.title': 'Shell 历史',

@@ -1688,6 +1688,7 @@ const en: Messages = {
   'snippets.field.packagePlaceholder': 'Select or create package',
   'snippets.field.createPackage': 'Create Package',
   'snippets.field.scriptRequired': 'Script *',
+  'snippets.field.iconColor': 'Icon Color',
   'snippets.targets.title': 'Targets',
   'snippets.targets.add': 'Add targets',
   'snippets.history.title': 'Shell History',
