@@ -188,14 +188,6 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
         window.dispatchEvent(new CustomEvent('netcatty:snippets:add'));
     }, []);
 
-    const handleManageSnippets = useCallback(() => {
-        window.dispatchEvent(new CustomEvent('netcatty:snippets:manage'));
-    }, []);
-
-    const handleNewPackage = useCallback(() => {
-        window.dispatchEvent(new CustomEvent('netcatty:snippets:new-package'));
-    }, []);
-
     const handleDeleteSnippet = useCallback((snippetId: string) => {
         window.dispatchEvent(new CustomEvent('netcatty:snippets:delete', { detail: { id: snippetId } }));
     }, []);
@@ -379,16 +371,6 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                     <ContextMenuItem onClick={handleAddSnippet}>
                         <Plus className="mr-2 h-4 w-4" />
                         {getLabel('snippets.menu.newButton', 'New Button...')}
-                    </ContextMenuItem>
-                    <ContextMenuItem onClick={handleManageSnippets}>
-                        {getLabel('snippets.menu.manageButtons', 'Manage Buttons...')}
-                    </ContextMenuItem>
-                    <ContextMenuSeparator />
-                    <ContextMenuItem onClick={handleNewPackage}>
-                        {getLabel('snippets.menu.newButtonBar', 'New Button Bar...')}
-                    </ContextMenuItem>
-                    <ContextMenuItem onClick={handleManageSnippets}>
-                        {getLabel('snippets.menu.manageButtonBars', 'Manage Button Bars...')}
                     </ContextMenuItem>
                 </ContextMenuContent>
             </ContextMenu>
