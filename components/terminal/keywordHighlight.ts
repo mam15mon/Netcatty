@@ -38,6 +38,7 @@ interface BufferSnapshot {
   baseY: number;
   viewportY: number;
   cursorAbsoluteY: number;
+  viewportProbe: readonly number[];
 }
 
 /** Shared empty array for non-matching lines to avoid per-call allocations. */
@@ -75,6 +76,7 @@ export class KeywordHighlighter implements IDisposable {
   private recentWriteBurst = 0;
   private lastWriteAt = 0;
   private lastBurstDecayAt = 0;
+  private forceViewportReconcileOnNextScroll = false;
   private static readonly DIRTY_SCAN_PADDING = XTERM_PERFORMANCE_CONFIG.highlighting.dirtyScanPadding;
   private static readonly WRITE_BURST_INTERVAL_MS = 28;
   private static readonly WRITE_BURST_DECAY_MS = 80;
@@ -376,9 +378,24 @@ export class KeywordHighlighter implements IDisposable {
     }
 
     if (mode === "immediate") {
-      // Throttle: skip if a rAF is already pending.
-      // Don't clear the debounce timer here — in a hidden tab rAF never
-      // fires, so the fallback timer is the only path that will run.
+      if (this.animationFrameId !== null) {
+        // Scroll should preempt queued continuation/write work.
+        // Cancel the pending frame and reschedule with current viewport intent.
+        if (reason === "scroll") {
+          cancelAnimationFrame(this.animationFrameId);
+          this.animationFrameId = null;
+          this.forceViewportReconcileOnNextScroll = true;
+          if (this.debounceTimer) {
+            clearTimeout(this.debounceTimer);
+            this.debounceTimer = null;
+          }
+        } else {
+          // Throttle non-scroll immediate refreshes when a frame is already pending.
+          // Don't clear the debounce timer here — in a hidden tab rAF never
+          // fires, so the fallback timer is the only path that will run.
+          return;
+        }
+      }
       if (this.animationFrameId !== null) {
         return;
       }
@@ -450,6 +467,10 @@ export class KeywordHighlighter implements IDisposable {
       if (reason === "write") {
         this.processDirtyLinesInRange(rangeStart, rangeEnd, cursorAbsoluteY, "write");
       } else if (reason === "scroll") {
+        if (this.forceViewportReconcileOnNextScroll) {
+          this.clearLineDecorationsInRange(viewportStart, viewportEnd);
+          this.forceViewportReconcileOnNextScroll = false;
+        }
         // Always process the full viewport on scroll.
         // Incremental-only processing can miss lines when scroll/render/write
         // events interleave and coverage bookkeeping becomes stale.
@@ -652,7 +673,53 @@ export class KeywordHighlighter implements IDisposable {
       baseY: buffer.baseY,
       viewportY: buffer.viewportY,
       cursorAbsoluteY: buffer.baseY + buffer.cursorY,
+      viewportProbe: this.buildViewportProbe(buffer, this.term.rows),
     };
+  }
+
+  private buildViewportProbe(buffer: IBuffer, rows: number): readonly number[] {
+    if (rows <= 0) return [];
+    const viewportStart = buffer.viewportY;
+    const viewportEnd = viewportStart + rows - 1;
+    const offsets = [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1];
+    const lineSet = new Set<number>();
+    for (const offset of offsets) {
+      const targetLine = viewportStart + Math.round((rows - 1) * offset);
+      lineSet.add(Math.max(viewportStart, Math.min(viewportEnd, targetLine)));
+    }
+
+    const probe: number[] = [];
+    for (const lineY of lineSet) {
+      const lineText = buffer.getLine(lineY)?.translateToString(true) ?? "";
+      probe.push(this.hashProbeText(lineText));
+    }
+    return probe;
+  }
+
+  private hashProbeText(text: string): number {
+    const sampleLimit = 512;
+    let hash = 2166136261;
+    const maxLen = Math.min(text.length, sampleLimit);
+    for (let index = 0; index < maxLen; index += 1) {
+      hash ^= text.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    hash ^= text.length;
+    return hash >>> 0;
+  }
+
+  private countViewportProbeDiff(
+    currentProbe: readonly number[],
+    previousProbe: readonly number[],
+  ): number {
+    const maxLen = Math.max(currentProbe.length, previousProbe.length);
+    let diffCount = 0;
+    for (let index = 0; index < maxLen; index += 1) {
+      if (currentProbe[index] !== previousProbe[index]) {
+        diffCount += 1;
+      }
+    }
+    return diffCount;
   }
 
   private markVisibleRangeDirty() {
@@ -780,6 +847,21 @@ export class KeywordHighlighter implements IDisposable {
     const largeDeltaThreshold = rows * 4;
 
     if (cursorSpan > largeDeltaThreshold || baseSpan > largeDeltaThreshold) {
+      this.markVisibleRangeDirty();
+      return;
+    }
+
+    const sameWindow =
+      snapshot.length === prev.length &&
+      snapshot.baseY === prev.baseY &&
+      snapshot.viewportY === prev.viewportY;
+    const probeDiffCount = this.countViewportProbeDiff(
+      snapshot.viewportProbe,
+      prev.viewportProbe,
+    );
+    // Detect in-place ANSI redraw chunks (cursor returns near original line
+    // while multiple viewport regions are actually rewritten).
+    if (sameWindow && cursorSpan <= Math.max(1, padding * 2) && probeDiffCount >= 2) {
       this.markVisibleRangeDirty();
       return;
     }
@@ -929,6 +1011,8 @@ export class KeywordHighlighter implements IDisposable {
       if (
         existing &&
         !existing.marker.isDisposed &&
+        existing.decorations.length > 0 &&
+        existing.decorations.every((decoration) => !decoration.isDisposed) &&
         existing.marker.line === lineY &&
         existing.signature === signature
       ) {
@@ -937,6 +1021,15 @@ export class KeywordHighlighter implements IDisposable {
 
       this.disposeLineDecorations(lineY, existing);
       this.applyLineDecorations(lineY, cachedRanges, signature, cursorAbsoluteY);
+    }
+  }
+
+  private clearLineDecorationsInRange(start: number, end: number) {
+    if (end < start || this.lineDecorations.size === 0) return;
+    const entries = Array.from(this.lineDecorations.entries());
+    for (const [lineY, state] of entries) {
+      if (lineY < start || lineY > end) continue;
+      this.disposeLineDecorations(lineY, state);
     }
   }
 
