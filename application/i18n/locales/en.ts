@@ -1675,6 +1675,7 @@ const en: Messages = {
   'snippets.searchPlaceholder': 'Search snippets...',
   'snippets.action.newSnippet': 'New Snippet',
   'snippets.action.newPackage': 'New Package',
+  'snippets.action.editInline': 'Edit in Composer',
   'snippets.panel.newTitle': 'New Snippet',
   'snippets.panel.editTitle': 'Edit Snippet',
   'snippets.field.description': 'Action description',

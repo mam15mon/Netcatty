@@ -1692,6 +1692,7 @@ const zhCN: Messages = {
   'snippets.searchPlaceholder': '搜索代码片段...',
   'snippets.action.newSnippet': '新建代码片段',
   'snippets.action.newPackage': '新建代码包',
+  'snippets.action.editInline': '编辑到命令框',
   'snippets.panel.newTitle': '新建代码片段',
   'snippets.panel.editTitle': '编辑代码片段',
   'snippets.field.description': '描述',

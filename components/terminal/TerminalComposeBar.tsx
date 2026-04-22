@@ -167,6 +167,11 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
         textareaRef.current?.focus();
     }, [onSend, onSnippetExecute]);
 
+    const handleEditSnippetInline = useCallback((snippet: Snippet) => {
+        setComposeText(snippet.command);
+        textareaRef.current?.focus();
+    }, [setComposeText]);
+
     const handleEditSnippet = useCallback((snippet: Snippet) => {
         window.dispatchEvent(
             new CustomEvent('netcatty:snippets:edit', { detail: { snippet } }),
@@ -249,30 +254,24 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                     backgroundColor: `color-mix(in srgb, ${resolvedFg} 5%, transparent)`,
                 }}
             >
-                {packageOptions.length > 0 ? (
-                    <Select
-                        value={selectedPackage || allPackagesValue}
-                        onValueChange={(value) => setSelectedPackage(value === allPackagesValue ? '' : value)}
-                    >
-                        <SelectTrigger className="h-6 w-auto px-2 bg-black/20 border-border/20 hover:bg-white/5 transition-colors gap-1.5 focus:ring-0 focus:ring-offset-0 text-[10px] font-medium tracking-wide flex items-center [&>span]:translate-y-[1.5px]">
-                            <SelectValue placeholder={getLabel('snippets.breadcrumb.allPackages', 'All Packages')} />
-                        </SelectTrigger>
-                        <SelectContent className="bg-background border-border/30 z-[1000]">
-                            <SelectItem value={allPackagesValue} className="text-[10px] font-medium tracking-wide">
-                                {getLabel('snippets.breadcrumb.allPackages', 'All Packages')}
+                <Select
+                    value={selectedPackage || allPackagesValue}
+                    onValueChange={(value) => setSelectedPackage(value === allPackagesValue ? '' : value)}
+                >
+                    <SelectTrigger className="h-6 w-auto px-2 bg-black/20 border-border/20 hover:bg-white/5 transition-colors gap-1.5 focus:ring-0 focus:ring-offset-0 text-[10px] font-medium tracking-wide flex items-center [&>span]:translate-y-[1.5px]">
+                        <SelectValue placeholder={getLabel('snippets.breadcrumb.allPackages', 'All Packages')} />
+                    </SelectTrigger>
+                    <SelectContent className="bg-background border-border/30 z-[1000]">
+                        <SelectItem value={allPackagesValue} className="text-[10px] font-medium tracking-wide">
+                            {getLabel('snippets.breadcrumb.allPackages', 'All Packages')}
+                        </SelectItem>
+                        {packageOptions.map((item) => (
+                            <SelectItem key={item} value={item} className="text-[10px] font-medium tracking-wide">
+                                {item}
                             </SelectItem>
-                            {packageOptions.map((item) => (
-                                <SelectItem key={item} value={item} className="text-[10px] font-medium tracking-wide">
-                                    {item}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                ) : (
-                    <span className="text-[10px] font-medium text-muted-foreground px-1">
-                        {getLabel('snippets.field.package', 'Package')}
-                    </span>
-                )}
+                        ))}
+                    </SelectContent>
+                </Select>
 
                 <div className="w-px h-3 bg-border/40 mx-1" />
                 <div className="flex-1" />
@@ -321,6 +320,9 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                                     <ContextMenuItem onClick={() => handleSnippetExecute(snippet)}>
                                         <Play className="mr-2 h-4 w-4" />
                                         {getLabel('action.run', 'Run')}
+                                    </ContextMenuItem>
+                                    <ContextMenuItem onClick={() => handleEditSnippetInline(snippet)}>
+                                        {getLabel('snippets.action.editInline', 'Edit In Composer')}
                                     </ContextMenuItem>
                                     <ContextMenuItem onClick={() => handleEditSnippet(snippet)}>
                                         {getLabel('action.edit', 'Edit')}
