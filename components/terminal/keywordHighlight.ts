@@ -407,6 +407,7 @@ export class KeywordHighlighter implements IDisposable {
     const rangeEnd = viewportEnd + overscan;
 
     const previousRange = this.lastRenderRange;
+    const previousViewportRange = this.lastViewportRange;
     this.beginTerminalRefreshTracking(viewportStart, viewportEnd);
     try {
       this.reindexLineDecorationsFromMarkers();
@@ -418,13 +419,22 @@ export class KeywordHighlighter implements IDisposable {
         // Incremental-only processing can miss lines when scroll/render/write
         // events interleave and coverage bookkeeping becomes stale.
         this.processLineRange(viewportStart, viewportEnd, cursorAbsoluteY);
-        if (rangeStart < viewportStart) {
-          this.addDirtyRange(rangeStart, viewportStart - 1);
+        const viewportChanged =
+          previousViewportRange === null ||
+          previousViewportRange.start !== viewportStart ||
+          previousViewportRange.end !== viewportEnd;
+        if (viewportChanged) {
+          if (rangeStart < viewportStart) {
+            this.addDirtyRange(rangeStart, viewportStart - 1);
+          }
+          if (rangeEnd > viewportEnd) {
+            this.addDirtyRange(viewportEnd + 1, rangeEnd);
+          }
         }
-        if (rangeEnd > viewportEnd) {
-          this.addDirtyRange(viewportEnd + 1, rangeEnd);
-        }
-        this.processDirtyLinesInRange(rangeStart, rangeEnd, cursorAbsoluteY, "scroll");
+        // Overscan catch-up should not re-enter the scroll path on continuation,
+        // otherwise repeated same-viewport refreshes can keep re-queueing the
+        // same dirty ranges and starve completion.
+        this.processDirtyLinesInRange(rangeStart, rangeEnd, cursorAbsoluteY, "write");
       } else if (previousRange !== null && this.lineDecorations.size > 0) {
         if (rangeStart < previousRange.start) {
           this.processLineRange(rangeStart, Math.min(rangeEnd, previousRange.start - 1), cursorAbsoluteY);
@@ -450,11 +460,26 @@ export class KeywordHighlighter implements IDisposable {
         this.lastRenderRange = null;
       } else {
         this.lastViewportRange = { start: viewportStart, end: viewportEnd };
-        this.lastRenderRange = { start: rangeStart, end: rangeEnd };
+        const scrollRangeFullyProcessed =
+          reason !== "scroll" || !this.hasDirtyRangeInWindow(rangeStart, rangeEnd);
+        this.lastRenderRange = scrollRangeFullyProcessed
+          ? { start: rangeStart, end: rangeEnd }
+          : { start: viewportStart, end: viewportEnd };
       }
     } finally {
       this.flushTerminalRefresh();
     }
+  }
+
+  private hasDirtyRangeInWindow(start: number, end: number): boolean {
+    if (end < start) return false;
+    if (this.dirtyAllInRenderRange) return true;
+    for (const segment of this.dirtySegments) {
+      if (segment.end < start) continue;
+      if (segment.start > end) return false;
+      return true;
+    }
+    return false;
   }
 
   private beginTerminalRefreshTracking(viewportStart: number, viewportEnd: number) {
