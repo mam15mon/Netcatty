@@ -297,11 +297,19 @@ function toggleTrayPanel() {
 function resolveTrayIconPath() {
   const { app } = electronModule;
 
-  // Use different icons for different platforms
-  // macOS: template image (black + transparent, system handles color)
-  // Windows/Linux: colored icon
-  const isMac = process.platform === "darwin";
-  const iconName = isMac ? "tray-iconTemplate.png" : "tray-icon.png";
+  // Platform-specific tray source:
+  //  - macOS: template image (black + transparent, system handles tint)
+  //  - Windows: multi-size .ico so the shell can pick the right pixel size
+  //    per DPI scale (avoids blur at 125/150/175/250 % scale)
+  //  - Linux: colored PNG (with an @2x representation attached at load time)
+  let iconName;
+  if (process.platform === "darwin") {
+    iconName = "tray-iconTemplate.png";
+  } else if (process.platform === "win32") {
+    iconName = "tray-icon.ico";
+  } else {
+    iconName = "tray-icon.png";
+  }
 
   // Security: Only use known packaged icon locations, ignore renderer-provided paths
   const candidates = [
@@ -593,8 +601,20 @@ function createTray() {
       if (process.platform === "darwin") {
         trayIcon = trayIcon.resize({ width: 16, height: 16 });
         trayIcon.setTemplateImage(true);
+      } else if (process.platform === "win32") {
+        // The .ico already carries 16/20/24/32/40/48/64 — Windows picks the
+        // right size per DPI scale on its own. Do not resize.
       } else {
-        trayIcon = trayIcon.resize({ width: 16, height: 16 });
+        // Linux: attach the @2x representation so the shell can pick the
+        // right pixel size on HiDPI. Leaving the base at its native size
+        // (no force resize) keeps it crisp at 100 % too.
+        const hiDpiPath = resolvedIconPath.replace(/\.png$/i, "@2x.png");
+        if (fs.existsSync(hiDpiPath)) {
+          trayIcon.addRepresentation({
+            scaleFactor: 2,
+            buffer: fs.readFileSync(hiDpiPath),
+          });
+        }
       }
     }
 
