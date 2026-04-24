@@ -1,5 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { localStorageAdapter } from "../../infrastructure/persistence/localStorageAdapter";
+
+type StoredSyncedStringOptions = {
+    debounceMs?: number;
+    maxPersistedLength?: number;
+};
 
 /**
  * Hook for persisting a string value to localStorage with cross-window sync.
@@ -10,7 +15,12 @@ export const useStoredSyncedString = <T extends string = string>(
     storageKey: string,
     fallback: T,
     validate?: (value: string) => value is T,
+    options?: StoredSyncedStringOptions,
 ) => {
+    const debounceMs = options?.debounceMs ?? 0;
+    const maxPersistedLength = options?.maxPersistedLength;
+    const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
     const resolveStored = useCallback((): T => {
         const stored = localStorageAdapter.readString(storageKey);
         if (stored === null) return fallback;
@@ -20,16 +30,45 @@ export const useStoredSyncedString = <T extends string = string>(
 
     const [value, setValue] = useState<T>(resolveStored);
 
+    const persistValue = useCallback((nextValue: T) => {
+        const persistedValue =
+            typeof maxPersistedLength === "number" && maxPersistedLength >= 0 && nextValue.length > maxPersistedLength
+                ? nextValue.slice(0, maxPersistedLength)
+                : nextValue;
+        localStorageAdapter.writeString(storageKey, persistedValue);
+        window.dispatchEvent(
+            new CustomEvent("stored-string-change", { detail: { key: storageKey, value: persistedValue } }),
+        );
+    }, [storageKey, maxPersistedLength]);
+
     const setAndPersist = useCallback((next: T | ((prev: T) => T)) => {
         setValue((prev) => {
             const resolved = typeof next === "function" ? (next as (prev: T) => T)(prev) : next;
-            localStorageAdapter.writeString(storageKey, resolved);
-            window.dispatchEvent(
-                new CustomEvent("stored-string-change", { detail: { key: storageKey, value: resolved } }),
-            );
+            if (persistTimerRef.current) {
+                clearTimeout(persistTimerRef.current);
+                persistTimerRef.current = null;
+            }
+
+            if (debounceMs <= 0) {
+                persistValue(resolved);
+            } else {
+                persistTimerRef.current = setTimeout(() => {
+                    persistTimerRef.current = null;
+                    persistValue(resolved);
+                }, debounceMs);
+            }
             return resolved;
         });
-    }, [storageKey]);
+    }, [debounceMs, persistValue]);
+
+    useEffect(() => {
+        return () => {
+            if (persistTimerRef.current) {
+                clearTimeout(persistTimerRef.current);
+                persistTimerRef.current = null;
+            }
+        };
+    }, []);
 
     useEffect(() => {
         const handleCustom = (event: Event) => {

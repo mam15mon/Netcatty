@@ -246,8 +246,9 @@ export interface AISettings {
 }
 
 export const DEFAULT_COMMAND_BLOCKLIST = [
-  // rm with recursive+force in any order/form targeting root
-  '\\brm\\s+(-[a-zA-Z]*r[a-zA-Z]*\\s+(-[a-zA-Z]*f[a-zA-Z]*\\s+)?|-[a-zA-Z]*f[a-zA-Z]*\\s+(-[a-zA-Z]*r[a-zA-Z]*\\s+)?|--recursive\\s+|--force\\s+){1,}',
+  // rm with recursive+force in either order (`rm -rf`, `rm -fr`, `rm --recursive --force`)
+  '\\brm\\b[^\\r\\n]*(?:--recursive|-r)\\b[^\\r\\n]*(?:--force|-f)\\b',
+  '\\brm\\b[^\\r\\n]*(?:--force|-f)\\b[^\\r\\n]*(?:--recursive|-r)\\b',
   '\\bmkfs\\.',
   '\\bdd\\s+if=.*\\s+of=/dev/',
   '\\b(shutdown|reboot|poweroff|halt)\\b',

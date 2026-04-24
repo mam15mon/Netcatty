@@ -634,7 +634,12 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
 
   // Integrated Compose Bar state (SecureCRT style)
   const [isComposerOpen, setIsComposerOpen] = useStoredBoolean(STORAGE_KEY_TERM_COMPOSE_BAR_OPEN, false);
-  const [composerDraft, setComposerDraft] = useStoredString(STORAGE_KEY_TERM_COMPOSE_BAR_DRAFT, '');
+  const [composerDraft, setComposerDraft] = useStoredString(
+    STORAGE_KEY_TERM_COMPOSE_BAR_DRAFT,
+    '',
+    undefined,
+    { debounceMs: 120, maxPersistedLength: 8192 },
+  );
   const { saveActiveSessionContext } = useComposerBackend();
   const [composerSendTarget, setComposerSendTarget] = useStoredString<'current-tab' | 'current-split' | 'all-sessions'>(
     STORAGE_KEY_TERM_COMPOSE_BAR_SEND_TARGET, 
@@ -732,8 +737,27 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     }
   }, [activeWorkspace, sessions, terminalBackend]);
 
+  const writeToSessionChunked = useCallback((sessionId: string, data: string) => {
+    const CHUNK_SIZE = 16 * 1024;
+    if (data.length <= CHUNK_SIZE) {
+      terminalBackend.writeToSession(sessionId, data);
+      return;
+    }
+
+    let offset = 0;
+    const flushNextChunk = () => {
+      const chunk = data.slice(offset, offset + CHUNK_SIZE);
+      if (!chunk) return;
+      terminalBackend.writeToSession(sessionId, chunk);
+      offset += CHUNK_SIZE;
+      if (offset < data.length) {
+        setTimeout(flushNextChunk, 0);
+      }
+    };
+    flushNextChunk();
+  }, [terminalBackend]);
+
   const handleComposerSend = useCallback((text: string) => {
-    if (!text) return;
     const data = `${normalizeLineEndings(text)}\r`;
     
     let targetIds: string[] = [];
@@ -750,9 +774,17 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     }
 
     targetIds.forEach(id => {
-        terminalBackend.writeToSession(id, data);
+        writeToSessionChunked(id, data);
     });
-  }, [resolvedComposerSendTarget, focusedSessionId, activeWorkspace, activeTabId, sessions, terminalBackend]);
+
+  }, [
+    resolvedComposerSendTarget,
+    focusedSessionId,
+    activeWorkspace,
+    activeTabId,
+    sessions,
+    writeToSessionChunked,
+  ]);
 
   // Update active session context to main process for global composer
   useEffect(() => {

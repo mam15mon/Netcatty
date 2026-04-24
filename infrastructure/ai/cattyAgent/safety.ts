@@ -30,14 +30,14 @@ function isSafeRegex(pattern: string): boolean {
  * can bypass regex-based filtering. The primary security boundary is the
  * permission / confirmation system and OS-level sandboxing.
  */
-const compiledDefaultBlocklist: RegExp[] = DEFAULT_COMMAND_BLOCKLIST.flatMap(
+const compiledDefaultBlocklist: Array<{ pattern: string; regex: RegExp }> = DEFAULT_COMMAND_BLOCKLIST.flatMap(
   (pattern) => {
     try {
       if (!isSafeRegex(pattern)) {
         console.warn(`[Safety] Skipping default blocklist pattern with nested quantifiers (ReDoS risk): ${pattern}`);
         return [];
       }
-      return [new RegExp(pattern, 'i')];
+      return [{ pattern, regex: new RegExp(pattern, 'i') }];
     } catch {
       return [];
     }
@@ -80,8 +80,8 @@ export function checkCommandSafety(
   // Fast path: use pre-compiled regexes for the default blocklist
   if (blocklist === DEFAULT_COMMAND_BLOCKLIST) {
     for (let i = 0; i < compiledDefaultBlocklist.length; i++) {
-      if (compiledDefaultBlocklist[i].test(command)) {
-        return { blocked: true, matchedPattern: DEFAULT_COMMAND_BLOCKLIST[i] };
+      if (compiledDefaultBlocklist[i].regex.test(command)) {
+        return { blocked: true, matchedPattern: compiledDefaultBlocklist[i].pattern };
       }
     }
     return { blocked: false };

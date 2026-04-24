@@ -666,7 +666,6 @@ const registerBridges = (win) => {
   ipcMain.on("netcatty:composer:send", (_event, payload) => {
     const text = typeof payload?.text === "string" ? payload.text : "";
     const sendTarget = payload?.sendTarget;
-    if (!text.trim()) return;
 
     const data = text.endsWith("\r") ? text : `${text}\r`;
     const context = lastFocusedSessionContext;
@@ -691,8 +690,26 @@ const registerBridges = (win) => {
     }
 
     const dedupedSessionIds = Array.from(new Set(targetSessionIds)).filter((sessionId) => sessions.has(sessionId));
+    const writeComposerDataToSession = (sessionId, output) => {
+      const CHUNK_SIZE = 16 * 1024;
+      if (output.length <= CHUNK_SIZE) {
+        terminalBridge.writeToSession(null, { sessionId, data: output });
+        return;
+      }
+      let offset = 0;
+      const flushNextChunk = () => {
+        const chunk = output.slice(offset, offset + CHUNK_SIZE);
+        if (!chunk) return;
+        terminalBridge.writeToSession(null, { sessionId, data: chunk });
+        offset += CHUNK_SIZE;
+        if (offset < output.length) {
+          setImmediate(flushNextChunk);
+        }
+      };
+      flushNextChunk();
+    };
     for (const sessionId of dedupedSessionIds) {
-      terminalBridge.writeToSession(null, { sessionId, data });
+      writeComposerDataToSession(sessionId, data);
     }
   });
 

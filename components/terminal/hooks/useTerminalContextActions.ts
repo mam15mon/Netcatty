@@ -24,6 +24,15 @@ export const useTerminalContextActions = ({
   disableBracketedPasteRef?: RefObject<boolean>;
   scrollOnPasteRef?: RefObject<boolean>;
 }) => {
+  const refocusTerminal = useCallback((term: XTerm) => {
+    term.focus();
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => {
+        term.focus();
+      });
+    }
+  }, []);
+
   const onCopy = useCallback(() => {
     const term = termRef.current;
     if (!term) return;
@@ -50,11 +59,12 @@ export const useTerminalContextActions = ({
             });
           }
         }
+        refocusTerminal(term);
       }
     } catch (err) {
       logger.warn("Failed to paste from clipboard", err);
     }
-  }, [sessionRef, termRef, terminalBackend, disableBracketedPasteRef, scrollOnPasteRef]);
+  }, [sessionRef, termRef, terminalBackend, disableBracketedPasteRef, scrollOnPasteRef, refocusTerminal]);
 
   const onPasteSelection = useCallback(() => {
     const term = termRef.current;
@@ -72,7 +82,8 @@ export const useTerminalContextActions = ({
         });
       }
     }
-  }, [sessionRef, termRef, terminalBackend, disableBracketedPasteRef, scrollOnPasteRef]);
+    refocusTerminal(term);
+  }, [sessionRef, termRef, terminalBackend, disableBracketedPasteRef, scrollOnPasteRef, refocusTerminal]);
 
   const onSelectAll = useCallback(() => {
     const term = termRef.current;

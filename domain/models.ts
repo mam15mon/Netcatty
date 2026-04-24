@@ -526,23 +526,265 @@ const LEGACY_BUILT_IN_KEYWORD_HIGHLIGHT_RULE_IDS = new Set([
   'ip-mac',
 ]);
 
-export const DEFAULT_KEYWORD_HIGHLIGHT_RULES: KeywordHighlightRule[] = [];
+const DEFAULT_KEYWORD_HIGHLIGHT_RULES_V1: KeywordHighlightRule[] = [
+  {
+    id: 'builtin-network-interface',
+    label: 'interface',
+    patterns: [
+      '\\b(?:HundredGigE|M-?GigabitEthernet|XGigabitEthernet|GigabitEthernet|Ten-?GigabitEthernet|Forty-?GigabitEthernet|[FXM]GE|100GE|40GE|10GE|HGE|BAGG|RAGG|Eth-?Trunk|Vlan(?:if)?|MEth)[\\d/.]+\\b',
+    ],
+    color: '#22D3EE',
+    enabled: true,
+  },
+  {
+    id: 'builtin-network-good',
+    label: 'good',
+    patterns: [
+      '\\b(up|enabled?|permit(ted)?|success(ful(ly)?)?|done|ok)\\b',
+    ],
+    color: '#4ADE80',
+    enabled: true,
+  },
+  {
+    id: 'builtin-network-bad',
+    label: 'bad',
+    patterns: [
+      '\\b(disabled?|not enabled|undo|close(d)?|shutdown|fail(ed)?|deleted?|never|error(s)|den(y|(ied))|down)\\b',
+    ],
+    color: '#F87171',
+    enabled: true,
+  },
+  {
+    id: 'builtin-network-ipv4',
+    label: 'IPV4',
+    patterns: [
+      '\\b(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\b',
+    ],
+    color: '#60A5FA',
+    enabled: true,
+  },
+  {
+    id: 'builtin-network-ipv6',
+    label: 'IPV6',
+    patterns: [
+      '(?<![0-9A-Fa-f:])(?:[0-9A-Fa-f]{1,4}:){2,7}[0-9A-Fa-f]{1,4}(?![0-9A-Fa-f:])|(?<![0-9A-Fa-f:])(?:[0-9A-Fa-f]{1,4}:){1,7}:(?![0-9A-Fa-f:])|(?<![0-9A-Fa-f:]):(?::[0-9A-Fa-f]{1,4}){1,7}(?![0-9A-Fa-f:])|(?<![0-9A-Fa-f:])::(?![0-9A-Fa-f:])',
+    ],
+    color: '#A78BFA',
+    enabled: true,
+  },
+  {
+    id: 'builtin-network-mac',
+    label: 'MAC',
+    patterns: [
+      '\\b(?:[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}|[0-9A-Fa-f]{2}(?:-[0-9A-Fa-f]{2}){5}|[0-9A-Fa-f]{4}(?:\\.[0-9A-Fa-f]{4}){2})\\b',
+    ],
+    color: '#60A5FA',
+    enabled: true,
+  },
+  {
+    id: 'builtin-network-view-mode',
+    label: 'view-mode',
+    patterns: [
+      '^[\\w.]*<([^>]+)>',
+    ],
+    color: '#FBBF24',
+    enabled: true,
+  },
+  {
+    id: 'builtin-network-privileged-mode',
+    label: 'privileged-mode',
+    patterns: [
+      '^[\\w.]*\\[([^\\]]+)\\]',
+    ],
+    color: '#FB923C',
+    enabled: true,
+  },
+];
+
+export const DEFAULT_KEYWORD_HIGHLIGHT_RULES: KeywordHighlightRule[] = [
+  {
+    id: 'builtin-network-interface',
+    label: 'interface',
+    patterns: [
+      '\\b(?:Embedded-Service-Engine\\d+/\\d+|(?:HundredGigE|M-?GigabitEthernet|XGigabitEthernet|GigabitEthernet|Ten-?GigabitEthernet|Forty-?GigabitEthernet|TwentyFiveGigE|[FXM]GE|100GE|40GE|25GE|10GE|HGE|BAGG|RAGG|Eth-?Trunk|Port-?channel|Po|Serial|Vlan(?:if)?|Loopback|Tunnel|MEth|MgmtEth|mgmt|null)\\d+(?:[/:.]\\d+)*(?:,\\d+)?)\\b',
+    ],
+    color: '#22D3EE',
+    enabled: true,
+  },
+  {
+    id: 'builtin-network-good',
+    label: 'good-status',
+    patterns: [
+      '\\b(?:up|enabled?|permit(?:ted)?|success(?:ful(?:ly)?)?|done|ok|running|active|connected|established|forwarding|passed|complete)\\b|\\[OK\\]',
+    ],
+    color: '#4ADE80',
+    enabled: true,
+  },
+  {
+    id: 'builtin-network-normal',
+    label: 'normal-status',
+    patterns: [
+      '\\b(?:init(?:ializing)?|standby|ready|auto|negotiat(?:e|ing)|learning|listening|monitor(?:ing)?|unknown)\\b',
+    ],
+    color: '#FACC15',
+    enabled: true,
+  },
+  {
+    id: 'builtin-network-bad',
+    label: 'bad-status',
+    patterns: [
+      '\\b(?:disabled?|not enabled|undo|close(?:d)?|shutdown|fail(?:ed|ure)?|delete(?:d)?|remove(?:d)?|never|errors?|deny|denied|down|invalid|off|inhibit|administratively|half-duplex|err-disabled|crc|fcs|drops?|discard(?:ed)?|input errors?|output errors?|write erase|erase|reload|factory-reset|format)\\b|\\[confirm\\]|\\(yes/no\\):|\\[yes/no\\]:',
+    ],
+    color: '#F87171',
+    enabled: true,
+  },
+  {
+    id: 'builtin-network-ipv4',
+    label: 'IPV4',
+    patterns: [
+      '\\b(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\b',
+    ],
+    color: '#60A5FA',
+    enabled: true,
+  },
+  {
+    id: 'builtin-network-ipv6',
+    label: 'IPV6',
+    patterns: [
+      '(?<![0-9A-Fa-f:])(?:[0-9A-Fa-f]{1,4}:){2,7}[0-9A-Fa-f]{1,4}(?![0-9A-Fa-f:])|(?<![0-9A-Fa-f:])(?:[0-9A-Fa-f]{1,4}:){1,7}:(?![0-9A-Fa-f:])|(?<![0-9A-Fa-f:]):(?::[0-9A-Fa-f]{1,4}){1,7}(?![0-9A-Fa-f:])|(?<![0-9A-Fa-f:])::(?![0-9A-Fa-f:])',
+    ],
+    color: '#A78BFA',
+    enabled: true,
+  },
+  {
+    id: 'builtin-network-mac',
+    label: 'MAC',
+    patterns: [
+      '\\b(?:[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}|[0-9A-Fa-f]{2}(?:-[0-9A-Fa-f]{2}){5}|[0-9A-Fa-f]{4}(?:\\.[0-9A-Fa-f]{4}){2})\\b',
+    ],
+    color: '#60A5FA',
+    enabled: true,
+  },
+  {
+    id: 'builtin-network-view-mode',
+    label: 'view-mode',
+    patterns: [
+      '^[\\w.]*<([^>]+)>',
+    ],
+    color: '#FBBF24',
+    enabled: true,
+  },
+  {
+    id: 'builtin-network-privileged-mode',
+    label: 'privileged-mode',
+    patterns: [
+      '^[\\w.]*\\[([^\\]]+)\\]',
+    ],
+    color: '#FB923C',
+    enabled: true,
+  },
+];
 
 const cloneKeywordHighlightRule = (rule: KeywordHighlightRule): KeywordHighlightRule => ({
   ...rule,
   patterns: [...rule.patterns],
 });
 
+const isSameKeywordHighlightRule = (
+  first: KeywordHighlightRule,
+  second: KeywordHighlightRule,
+): boolean => (
+  first.id === second.id
+  && first.label === second.label
+  && first.color === second.color
+  && first.enabled === second.enabled
+  && first.patterns.length === second.patterns.length
+  && first.patterns.every((pattern, index) => pattern === second.patterns[index])
+);
+
+const BUILT_IN_KEYWORD_RULE_V1_BY_ID = new Map(
+  DEFAULT_KEYWORD_HIGHLIGHT_RULES_V1.map((rule) => [rule.id, rule]),
+);
+
+const BUILT_IN_KEYWORD_RULE_V2_BY_ID = new Map<string, KeywordHighlightRule>([
+  [
+    'builtin-network-ipv6',
+    {
+      id: 'builtin-network-ipv6',
+      label: 'IPV6',
+      patterns: [
+        '\\b(?:[0-9a-fA-F]{1,4}:){1,7}(?:[0-9a-fA-F]{1,4}|:)|(?::(?::[0-9a-fA-F]{1,4}){1,7}|(?:[0-9a-fA-F]{1,4}:){1,7}:)|::\\b',
+      ],
+      color: '#A78BFA',
+      enabled: true,
+    },
+  ],
+]);
+
+const LEGACY_BUILTIN_IPV6_PATTERN =
+  '\\b(?:[0-9a-fA-F]{1,4}:){1,7}(?:[0-9a-fA-F]{1,4}|:)|(?::(?::[0-9a-fA-F]{1,4}){1,7}|(?:[0-9a-fA-F]{1,4}:){1,7}:)|::\\b';
+
+const CURRENT_BUILTIN_IPV6_PATTERN =
+  '(?<![0-9A-Fa-f:])(?:[0-9A-Fa-f]{1,4}:){2,7}[0-9A-Fa-f]{1,4}(?![0-9A-Fa-f:])|(?<![0-9A-Fa-f:])(?:[0-9A-Fa-f]{1,4}:){1,7}:(?![0-9A-Fa-f:])|(?<![0-9A-Fa-f:]):(?::[0-9A-Fa-f]{1,4}){1,7}(?![0-9A-Fa-f:])|(?<![0-9A-Fa-f:])::(?![0-9A-Fa-f:])';
+
 const normalizeKeywordHighlightRules = (
   rules?: KeywordHighlightRule[],
 ): KeywordHighlightRule[] => {
-  if (!rules || rules.length === 0) {
-    return [];
-  }
-
-  return rules
+  const normalized = (rules ?? [])
     .filter((rule) => !LEGACY_BUILT_IN_KEYWORD_HIGHLIGHT_RULE_IDS.has(rule.id))
     .map(cloneKeywordHighlightRule);
+
+  if (normalized.length === 0) {
+    return DEFAULT_KEYWORD_HIGHLIGHT_RULES.map(cloneKeywordHighlightRule);
+  }
+
+  const merged: KeywordHighlightRule[] = [];
+  const remainingRules = new Map(normalized.map((rule) => [rule.id, rule]));
+
+  for (const builtInRule of DEFAULT_KEYWORD_HIGHLIGHT_RULES) {
+    const existing = remainingRules.get(builtInRule.id);
+    if (existing) {
+      if (
+        builtInRule.id === 'builtin-network-ipv6'
+        && existing.patterns.includes(LEGACY_BUILTIN_IPV6_PATTERN)
+      ) {
+        const migratedRule: KeywordHighlightRule = {
+          ...existing,
+          patterns: existing.patterns.map((pattern) => (
+            pattern === LEGACY_BUILTIN_IPV6_PATTERN
+              ? CURRENT_BUILTIN_IPV6_PATTERN
+              : pattern
+          )),
+        };
+        merged.push(migratedRule);
+        remainingRules.delete(builtInRule.id);
+        continue;
+      }
+
+      const previousBuiltIn = BUILT_IN_KEYWORD_RULE_V1_BY_ID.get(builtInRule.id);
+      const previousBuiltInV2 = BUILT_IN_KEYWORD_RULE_V2_BY_ID.get(builtInRule.id);
+      if (
+        (previousBuiltIn && isSameKeywordHighlightRule(existing, previousBuiltIn))
+        || (previousBuiltInV2 && isSameKeywordHighlightRule(existing, previousBuiltInV2))
+      ) {
+        merged.push(cloneKeywordHighlightRule(builtInRule));
+      } else {
+        merged.push(existing);
+      }
+      remainingRules.delete(builtInRule.id);
+      continue;
+    }
+    merged.push(cloneKeywordHighlightRule(builtInRule));
+  }
+
+  for (const rule of normalized) {
+    if (remainingRules.has(rule.id)) {
+      merged.push(rule);
+      remainingRules.delete(rule.id);
+    }
+  }
+
+  return merged;
 };
 
 export const normalizeTerminalSettings = (

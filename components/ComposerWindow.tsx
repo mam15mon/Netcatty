@@ -25,7 +25,12 @@ export const ComposerWindow: React.FC = () => {
   const { currentTerminalTheme } = useSettingsState();
   const { queryActiveSessionContext, sendComposerData, toggleComposer } = useComposerBackend();
 
-  const [draft, setDraft] = useStoredSyncedString(STORAGE_KEY_TERM_COMPOSE_BAR_DRAFT, '');
+  const [draft, setDraft] = useStoredSyncedString(
+    STORAGE_KEY_TERM_COMPOSE_BAR_DRAFT,
+    '',
+    undefined,
+    { debounceMs: 120, maxPersistedLength: 8192 },
+  );
   const [sendTarget, setSendTarget] = useStoredSyncedString<ComposeSendTarget>(
     STORAGE_KEY_TERM_COMPOSE_BAR_SEND_TARGET,
     'current-split',
@@ -46,7 +51,6 @@ export const ComposerWindow: React.FC = () => {
   }, [refreshContext]);
 
   const handleSend = useCallback((text: string) => {
-    if (!text.trim()) return;
     sendComposerData({ text, sendTarget });
     setDraft('');
   }, [sendComposerData, sendTarget, setDraft]);

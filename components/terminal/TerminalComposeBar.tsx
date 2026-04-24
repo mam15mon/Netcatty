@@ -140,6 +140,7 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
 
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const isComposingRef = useRef(false);
+    const sendLockRef = useRef(false);
     const [internalValue, setInternalValue] = useState('');
     const inputValue = value ?? internalValue;
 
@@ -157,11 +158,21 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
     }, [onValueChange]);
 
     const handleSend = useCallback(() => {
+        if (sendLockRef.current) return;
+        sendLockRef.current = true;
         const text = inputValue;
-        if (!text) return;
         onSend(text);
         setComposeText('');
         textareaRef.current?.focus();
+        if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(() => {
+                sendLockRef.current = false;
+            });
+        } else {
+            setTimeout(() => {
+                sendLockRef.current = false;
+            }, 0);
+        }
     }, [inputValue, onSend, setComposeText]);
 
     const handleSnippetExecute = useCallback((snippet: Snippet) => {
@@ -237,6 +248,7 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
     const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === 'Enter' && !e.shiftKey && !isComposingRef.current) {
             e.preventDefault();
+            if (e.repeat) return;
             handleSend();
         } else if (e.key === 'Escape') {
             e.preventDefault();

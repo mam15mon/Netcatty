@@ -6,7 +6,7 @@ import { Highlighter, Plus, Trash2, RotateCcw } from 'lucide-react';
 import React, { useState, useCallback, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useI18n } from '../../application/i18n/I18nProvider';
-import { isSafeRegexPattern } from '../../lib/regexSafety';
+import { validateUserRegexPattern } from '../../lib/regexSafety';
 import { Host, KeywordHighlightRule } from '../../types';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -49,25 +49,33 @@ export const HostKeywordHighlightPopover: React.FC<HostKeywordHighlightPopoverPr
     onUpdateHost({ ...host, keywordHighlightEnabled: !enabled });
   }, [host, onUpdateHost, enabled]);
 
-  const validatePattern = (pattern: string): boolean => {
-    if (!isSafeRegexPattern(pattern)) {
-      return false;
+  const validatePattern = useCallback((pattern: string): { valid: boolean; message?: string } => {
+    const validation = validateUserRegexPattern(pattern, 'gi');
+    if (validation.valid) {
+      return { valid: true };
     }
-    try {
-      new RegExp(pattern, 'gi');
-      return true;
-    } catch {
-      return false;
+
+    if (validation.issue === 'syntax_invalid') {
+      return { valid: false, message: t('terminal.toolbar.hostHighlight.invalidPatternSyntax') };
     }
-  };
+
+    const reasonText = validation.reason
+      ? t(`regexSafety.reason.${validation.reason}`)
+      : t('regexSafety.reason.unknown');
+    return {
+      valid: false,
+      message: t('terminal.toolbar.hostHighlight.patternRejectedBySafety', { reason: reasonText }),
+    };
+  }, [t]);
 
   const handleAddRule = useCallback(() => {
     if (!newRuleLabel.trim() || !newRulePattern.trim()) {
       return;
     }
 
-    if (!validatePattern(newRulePattern)) {
-      setPatternError(t('terminal.toolbar.hostHighlight.invalidPattern'));
+    const validation = validatePattern(newRulePattern);
+    if (!validation.valid) {
+      setPatternError(validation.message ?? t('terminal.toolbar.hostHighlight.invalidPatternSyntax'));
       return;
     }
 
@@ -91,7 +99,7 @@ export const HostKeywordHighlightPopover: React.FC<HostKeywordHighlightPopoverPr
     if (rules.length === 0 && !enabled && host && onUpdateHost) {
       onUpdateHost({ ...host, keywordHighlightRules: [newRule], keywordHighlightEnabled: true });
     }
-  }, [newRuleLabel, newRulePattern, newRuleColor, rules, updateRules, enabled, host, onUpdateHost, t]);
+  }, [newRuleLabel, newRulePattern, newRuleColor, rules, updateRules, enabled, host, onUpdateHost, t, validatePattern]);
 
   const handleDeleteRule = useCallback((ruleId: string) => {
     updateRules(rules.filter((r) => r.id !== ruleId));
@@ -112,7 +120,7 @@ export const HostKeywordHighlightPopover: React.FC<HostKeywordHighlightPopoverPr
 
   const handlePatternChange = (value: string) => {
     setNewRulePattern(value);
-    if (patternError && validatePattern(value)) {
+    if (patternError && validatePattern(value).valid) {
       setPatternError(null);
     }
   };

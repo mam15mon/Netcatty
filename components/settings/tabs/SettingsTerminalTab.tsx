@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState, useMemo } from "react";
-import { AlertCircle, ChevronRight, Import, Minus, Palette, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { AlertCircle, Check, ChevronRight, Copy, Import, Minus, Palette, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 import type {
   CursorShape,
   LinkModifier,
@@ -14,7 +14,7 @@ import { TERMINAL_THEMES } from "../../../infrastructure/config/terminalThemes";
 import { customThemeStore, useCustomThemes } from "../../../application/state/customThemeStore";
 import { parseItermcolors } from "../../../infrastructure/parsers/itermcolorsParser";
 import { cn } from "../../../lib/utils";
-import { isSafeRegexPattern } from "../../../lib/regexSafety";
+import { validateUserRegexPattern } from "../../../lib/regexSafety";
 import { useDiscoveredShells } from "../../../lib/useDiscoveredShells";
 import { Button } from "../../ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "../../ui/dialog";
@@ -57,12 +57,18 @@ const AddCustomRuleDialog: React.FC<{
 
   const handleSubmit = () => {
     if (!label.trim() || !pattern.trim()) return;
-    if (!isSafeRegexPattern(pattern)) {
-      setPatternError(t('settings.terminal.keywordHighlight.invalidPattern'));
-      return;
-    }
-    try { new RegExp(pattern, 'gi'); } catch {
-      setPatternError(t('settings.terminal.keywordHighlight.invalidPattern'));
+    const validation = validateUserRegexPattern(pattern, 'gi');
+    if (!validation.valid) {
+      if (validation.issue === 'syntax_invalid') {
+        setPatternError(t('settings.terminal.keywordHighlight.invalidPatternSyntax'));
+      } else {
+        const reasonText = validation.reason
+          ? t(`regexSafety.reason.${validation.reason}`)
+          : t('regexSafety.reason.unknown');
+        setPatternError(
+          t('settings.terminal.keywordHighlight.patternRejectedBySafety', { reason: reasonText }),
+        );
+      }
       return;
     }
     // When editing, replace only the first pattern and keep any additional ones
@@ -130,8 +136,21 @@ const KeywordHighlightRulesEditor: React.FC<{
   const { t } = useI18n();
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<KeywordHighlightRule | null>(null);
+  const [copiedRuleId, setCopiedRuleId] = useState<string | null>(null);
 
   const isBuiltIn = (id: string) => DEFAULT_KEYWORD_HIGHLIGHT_RULES.some((r) => r.id === id);
+  const copyColor = useCallback(async (ruleId: string, color: string) => {
+    if (!navigator.clipboard?.writeText) return;
+    try {
+      await navigator.clipboard.writeText(color);
+      setCopiedRuleId(ruleId);
+      window.setTimeout(() => {
+        setCopiedRuleId((current) => (current === ruleId ? null : current));
+      }, 1200);
+    } catch {
+      // Ignore clipboard failures.
+    }
+  }, []);
 
   return (
     <div className="space-y-2.5">
@@ -143,19 +162,26 @@ const KeywordHighlightRulesEditor: React.FC<{
               <span className={cn("text-sm truncate", !rule.enabled && "text-muted-foreground line-through")} style={rule.enabled ? { color: rule.color } : undefined}>
                 {rule.label}
               </span>
+              <Pencil
+                size={10}
+                className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground cursor-pointer"
+                onClick={() => { setEditingRule(rule); setAddDialogOpen(true); }}
+              />
+              <button
+                type="button"
+                className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+                onClick={() => { void copyColor(rule.id, rule.color); }}
+                title={t("settings.terminal.keywordHighlight.copyColor")}
+                aria-label={t("settings.terminal.keywordHighlight.copyColor")}
+              >
+                {copiedRuleId === rule.id ? <Check size={10} /> : <Copy size={10} />}
+              </button>
               {custom && (
-                <>
-                  <Pencil
-                    size={10}
-                    className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground cursor-pointer"
-                    onClick={() => { setEditingRule(rule); setAddDialogOpen(true); }}
-                  />
-                  <Trash2
-                    size={10}
-                    className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground cursor-pointer"
-                    onClick={() => onChange(rules.filter((r) => r.id !== rule.id))}
-                  />
-                </>
+                <Trash2
+                  size={10}
+                  className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground cursor-pointer"
+                  onClick={() => onChange(rules.filter((r) => r.id !== rule.id))}
+                />
               )}
             </div>
             <label className="relative flex-shrink-0">

@@ -3,7 +3,7 @@ import { Terminal as XTerm, IDecoration, IDisposable, IMarker, IBuffer, IBufferL
 import { KeywordHighlightRule } from "../../types";
 
 import { XTERM_PERFORMANCE_CONFIG } from "../../infrastructure/config/xtermPerformance";
-import { isSafeRegexPattern } from "../../lib/regexSafety";
+import { checkRegexSafetyPattern } from "../../lib/regexSafety";
 import { forEachNonEmptyRegexMatch } from "./keywordHighlightRegex";
 
 /** Pre-compiled rule with regex ready for matching */
@@ -129,8 +129,9 @@ export class KeywordHighlighter implements IDisposable {
       if (!rule.enabled || rule.patterns.length === 0) continue;
       for (const pattern of rule.patterns) {
         if (!pattern) continue;  // Skip empty patterns — RegExp("") is valid but matches nothing useful
-        if (!isSafeRegexPattern(pattern)) {
-          console.warn("[KeywordHighlight] Skipping unsafe regex pattern:", pattern);
+        const safetyCheck = checkRegexSafetyPattern(pattern);
+        if (safetyCheck.safe === false) {
+          console.warn("[KeywordHighlight] Skipping unsafe regex pattern:", pattern, "reason:", safetyCheck.reason);
           continue;
         }
         try {
