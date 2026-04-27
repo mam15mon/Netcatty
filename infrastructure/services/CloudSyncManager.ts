@@ -1046,6 +1046,22 @@ export class CloudSyncManager {
     }
   }
 
+  /**
+   * Clear only transient "connecting" status while keeping active adapter/state.
+   * Used after browser handoff in OAuth flow; completion continues asynchronously.
+   */
+  clearConnectingStatus(provider: CloudProvider): void {
+    const connection = this.state.providers[provider];
+    if (!connection || connection.status !== 'connecting') {
+      return;
+    }
+    this.state.providers[provider] = {
+      ...connection,
+      status: 'disconnected',
+    };
+    this.notifyStateChange();
+  }
+
   setProviderError(provider: CloudProvider, error: string): void {
     this.updateProviderStatus(provider, 'error', error);
   }
