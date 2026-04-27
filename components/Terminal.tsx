@@ -307,6 +307,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   const hotkeySchemeRef = useRef(hotkeyScheme);
   const keyBindingsRef = useRef(keyBindings);
   const onHotkeyActionRef = useRef(onHotkeyAction);
+  const onTerminalZoomStepRef = useRef<((step: number) => void) | undefined>(undefined);
   hotkeySchemeRef.current = hotkeyScheme;
   keyBindingsRef.current = keyBindings;
   onHotkeyActionRef.current = onHotkeyAction;
@@ -816,6 +817,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
           hotkeySchemeRef,
           keyBindingsRef,
           onHotkeyActionRef,
+          onTerminalZoomStepRef,
           isBroadcastEnabledRef,
           onBroadcastInputRef,
           snippetsRef,
@@ -1079,18 +1081,14 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     onAdjustTerminalFontSize(sessionId, nextFontSize);
   }, [onAdjustTerminalFontSize, sessionId]);
 
-  const handleTerminalWheel = useCallback((e: WheelEvent) => {
+  const adjustTerminalFontSizeByStep = useCallback((step: number) => {
     if (!onAdjustTerminalFontSize) return;
-    if (!(e.ctrlKey || e.metaKey)) return;
-    if (e.deltaY === 0) return;
-
-    e.preventDefault();
-    e.stopPropagation();
+    if (step === 0) return;
 
     const baseSize = wheelZoomSizeRef.current;
     const nextFontSize = Math.max(
       MIN_FONT_SIZE,
-      Math.min(MAX_FONT_SIZE, baseSize + (e.deltaY < 0 ? 1 : -1)),
+      Math.min(MAX_FONT_SIZE, baseSize + step),
     );
     if (nextFontSize === baseSize) return;
 
@@ -1106,15 +1104,26 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       flushTerminalWheelZoom();
     }, WHEEL_ZOOM_COMMIT_DELAY_MS);
   }, [applyWheelZoomPreview, flushTerminalWheelZoom, onAdjustTerminalFontSize]);
+  onTerminalZoomStepRef.current = adjustTerminalFontSizeByStep;
+
+  const handleTerminalWheel = useCallback((e: WheelEvent) => {
+    if (!onAdjustTerminalFontSize) return;
+    if (!(e.ctrlKey || e.metaKey)) return;
+    if (e.deltaY === 0) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    adjustTerminalFontSizeByStep(e.deltaY < 0 ? 1 : -1);
+  }, [adjustTerminalFontSizeByStep, onAdjustTerminalFontSize]);
 
   useEffect(() => {
     const root = terminalRootRef.current;
     if (!root) return;
 
-    root.addEventListener("wheel", handleTerminalWheel, { passive: false });
+    root.addEventListener("wheel", handleTerminalWheel, { passive: false, capture: true });
 
     return () => {
-      root.removeEventListener("wheel", handleTerminalWheel);
+      root.removeEventListener("wheel", handleTerminalWheel, true);
       if (wheelZoomTimerRef.current !== null) {
         window.clearTimeout(wheelZoomTimerRef.current);
         wheelZoomTimerRef.current = null;

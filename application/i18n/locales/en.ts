@@ -424,6 +424,8 @@ const en: Messages = {
   'settings.shortcuts.category.navigation': 'Navigation',
   'settings.shortcuts.category.app': 'App',
   'settings.shortcuts.category.sftp': 'SFTP',
+  'settings.shortcuts.binding.zoom-in-terminal': 'Zoom In Terminal Font',
+  'settings.shortcuts.binding.zoom-out-terminal': 'Zoom Out Terminal Font',
 
   // Context menus / common actions
   'action.newHost': 'New Host',

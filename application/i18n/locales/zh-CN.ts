@@ -1538,6 +1538,8 @@ const zhCN: Messages = {
   'settings.shortcuts.binding.select-all': '全选终端内容',
   'settings.shortcuts.binding.clear-buffer': '清空终端缓冲区',
   'settings.shortcuts.binding.search-terminal': '打开终端搜索',
+  'settings.shortcuts.binding.zoom-in-terminal': '放大终端字体',
+  'settings.shortcuts.binding.zoom-out-terminal': '缩小终端字体',
   'settings.shortcuts.binding.move-focus': '在分屏间移动焦点',
   'settings.shortcuts.binding.split-horizontal': '水平分屏',
   'settings.shortcuts.binding.split-vertical': '垂直分屏',

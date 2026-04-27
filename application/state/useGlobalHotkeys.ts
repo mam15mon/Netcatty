@@ -83,6 +83,8 @@ export const getTerminalPassthroughActions = (): Set<string> => {
     'selectAll',
     'clearBuffer',
     'searchTerminal',
+    'zoomInTerminal',
+    'zoomOutTerminal',
   ]);
 };
 

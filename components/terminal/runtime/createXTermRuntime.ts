@@ -79,6 +79,7 @@ export type CreateXTermRuntimeContext = {
   onHotkeyActionRef: RefObject<
     ((action: string, event: KeyboardEvent) => void) | undefined
   >;
+  onTerminalZoomStepRef: RefObject<((step: number) => void) | undefined>;
 
   isBroadcastEnabledRef: RefObject<boolean | undefined>;
   onBroadcastInputRef: RefObject<
@@ -562,6 +563,14 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
         }
         case "searchTerminal": {
           ctx.setIsSearchOpen(true);
+          break;
+        }
+        case "zoomInTerminal": {
+          ctx.onTerminalZoomStepRef.current?.(1);
+          break;
+        }
+        case "zoomOutTerminal": {
+          ctx.onTerminalZoomStepRef.current?.(-1);
           break;
         }
       }
