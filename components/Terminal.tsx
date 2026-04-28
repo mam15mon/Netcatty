@@ -1151,13 +1151,24 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     wheelInertiaLastInputMsRef.current = now;
     const burstMultiplier = 1 + wheelInertiaBurstCountRef.current * 0.18;
     const burstImpulse = effectiveImpulse * burstMultiplier;
+    const immediateRatio = 0.38;
+    const immediateLinesFloat = burstImpulse * immediateRatio * direction;
+    const immediateLines =
+      immediateLinesFloat > 0
+        ? Math.floor(immediateLinesFloat)
+        : Math.ceil(immediateLinesFloat);
+    if (immediateLines !== 0) {
+      term.scrollLines(immediateLines);
+    }
+    wheelInertiaCarryRef.current += immediateLinesFloat - immediateLines;
+    const tailImpulse = Math.max(0, burstImpulse * (1 - immediateRatio));
 
     if (wheelInertiaRafRef.current !== null && wheelInertiaDirectionRef.current === direction) {
       const remaining = Math.max(0, wheelInertiaTotalRef.current - wheelInertiaAppliedRef.current);
-      wheelInertiaTotalRef.current = Math.min(maxTotalDistance, remaining + burstImpulse);
+      wheelInertiaTotalRef.current = Math.min(maxTotalDistance, remaining + tailImpulse);
     } else {
       wheelInertiaDirectionRef.current = direction;
-      wheelInertiaTotalRef.current = Math.min(maxTotalDistance, burstImpulse);
+      wheelInertiaTotalRef.current = Math.min(maxTotalDistance, tailImpulse);
     }
     wheelInertiaAppliedRef.current = 0;
     wheelInertiaStartMsRef.current = now;
