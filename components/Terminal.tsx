@@ -1164,9 +1164,11 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     wheelInertiaLastProgressRef.current = 0;
 
     const easingByPreset: Record<'natural' | 'responsive' | 'gentle', (t: number) => number> = {
-      natural: (t) => 1 - Math.pow(1 - t, 2.4),
-      responsive: (t) => 1 - Math.pow(1 - t, 2),
-      gentle: (t) => t * (2 - t),
+      // Curves are intentionally separated for clear perceptual differences:
+      // responsive = fast front-loading, natural = balanced, gentle = long tail.
+      natural: (t) => 3 * t * t - 2 * t * t * t, // smoothstep
+      responsive: (t) => 1 - Math.pow(1 - t, 3.6),
+      gentle: (t) => 1 - Math.pow(1 - t, 1.4),
     };
 
     const runInertia = () => {
