@@ -1126,15 +1126,22 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     e.stopPropagation();
 
     const modeFactor = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1;
-    const impulse = (e.deltaY * modeFactor / 50) * (terminalSettings.smoothScrollInertiaStrength || 1);
-    wheelInertiaVelocityRef.current += impulse;
+    const rawDelta = (e.deltaY * modeFactor) / 120;
+    const direction = rawDelta >= 0 ? 1 : -1;
+    const normalized = Math.min(Math.abs(rawDelta), 3);
+    const impulse = direction * normalized * (terminalSettings.smoothScrollInertiaStrength || 1);
+    const maxVelocity = 8;
+    wheelInertiaVelocityRef.current = Math.max(
+      -maxVelocity,
+      Math.min(maxVelocity, wheelInertiaVelocityRef.current + impulse),
+    );
 
     const runInertia = () => {
       wheelInertiaRafRef.current = null;
       const activeTerm = termRef.current;
       if (!activeTerm) return;
 
-      const friction = terminalSettingsRef.current?.smoothScrollInertiaFriction ?? 0.9;
+      const friction = terminalSettingsRef.current?.smoothScrollInertiaFriction ?? 0.88;
       const clampedFriction = Math.min(0.995, Math.max(0.7, friction));
 
       wheelInertiaCarryRef.current += wheelInertiaVelocityRef.current;
