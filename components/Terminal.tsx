@@ -1053,12 +1053,9 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   const wheelZoomSizeRef = useRef(effectiveFontSize);
   const effectiveFontSizeRef = useRef(effectiveFontSize);
   const wheelInertiaRafRef = useRef<number | null>(null);
+  const wheelInertiaVelocityRef = useRef(0);
   const wheelInertiaCarryRef = useRef(0);
-  const wheelInertiaTotalRef = useRef(0);
-  const wheelInertiaAppliedRef = useRef(0);
   const wheelInertiaDirectionRef = useRef<1 | -1>(1);
-  const wheelInertiaStartMsRef = useRef(0);
-  const wheelInertiaLastProgressRef = useRef(0);
   const wheelInertiaBurstCountRef = useRef(0);
   const wheelInertiaLastInputMsRef = useRef(0);
 
@@ -1136,9 +1133,9 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     const direction: 1 | -1 = rawDelta >= 0 ? 1 : -1;
     const normalized = Math.min(Math.abs(rawDelta), 4.5);
     const impulse = normalized * (terminalSettings.smoothScrollInertiaStrength || 1);
-    const minDistancePerBurst = 1.6;
+    const minDistancePerBurst = 1.2;
     const effectiveImpulse = Math.max(minDistancePerBurst, impulse);
-    const maxTotalDistance = 56;
+    const maxVelocity = 28;
     const now = performance.now();
     const burstWindowMs = 180;
     const sameDirection = wheelInertiaDirectionRef.current === direction;
@@ -1151,7 +1148,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     wheelInertiaLastInputMsRef.current = now;
     const burstMultiplier = 1 + wheelInertiaBurstCountRef.current * 0.28;
     const burstImpulse = effectiveImpulse * burstMultiplier;
-    const immediateRatio = 0.52;
+    const immediateRatio = 0.35;
     const immediateLinesFloat = burstImpulse * immediateRatio * direction;
     const immediateLines =
       immediateLinesFloat > 0
@@ -1161,43 +1158,20 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       term.scrollLines(immediateLines);
     }
     wheelInertiaCarryRef.current += immediateLinesFloat - immediateLines;
-    const tailImpulse = Math.max(0, burstImpulse * (1 - immediateRatio));
-
-    if (wheelInertiaRafRef.current !== null && wheelInertiaDirectionRef.current === direction) {
-      const remaining = Math.max(0, wheelInertiaTotalRef.current - wheelInertiaAppliedRef.current);
-      wheelInertiaTotalRef.current = Math.min(maxTotalDistance, remaining + tailImpulse);
-    } else {
+    const tailImpulse = burstImpulse * (1 - immediateRatio);
+    if (wheelInertiaDirectionRef.current !== direction) {
+      wheelInertiaVelocityRef.current = 0;
       wheelInertiaDirectionRef.current = direction;
-      wheelInertiaTotalRef.current = Math.min(maxTotalDistance, tailImpulse);
     }
-    wheelInertiaAppliedRef.current = 0;
-    wheelInertiaStartMsRef.current = now;
-    wheelInertiaLastProgressRef.current = 0;
-
-    const easingByPreset: Record<'natural' | 'responsive' | 'gentle', (t: number) => number> = {
-      // Curves are intentionally separated for clear perceptual differences:
-      // responsive = fast front-loading, natural = balanced, gentle = long tail.
-      natural: (t) => 3 * t * t - 2 * t * t * t, // smoothstep
-      responsive: (t) => 1 - Math.pow(1 - t, 3.6),
-      gentle: (t) => 1 - Math.pow(1 - t, 1.4),
-    };
+    wheelInertiaVelocityRef.current += tailImpulse * direction;
+    wheelInertiaVelocityRef.current = Math.max(-maxVelocity, Math.min(maxVelocity, wheelInertiaVelocityRef.current));
 
     const runInertia = () => {
       wheelInertiaRafRef.current = null;
       const activeTerm = termRef.current;
       if (!activeTerm) return;
-      const nowMs = performance.now();
-      const durationMs = Math.max(80, terminalSettingsRef.current?.smoothScrollInertiaDurationMs ?? 360);
-      const preset = terminalSettingsRef.current?.smoothScrollInertiaCurve ?? 'natural';
-      const easing = easingByPreset[preset];
-      const progress = Math.min(1, (nowMs - wheelInertiaStartMsRef.current) / durationMs);
-      const easedNow = easing(progress);
-      const easedPrev = easing(wheelInertiaLastProgressRef.current);
-      const delta = Math.max(0, (easedNow - easedPrev) * wheelInertiaTotalRef.current);
-      wheelInertiaAppliedRef.current += delta;
-      wheelInertiaLastProgressRef.current = progress;
-
-      wheelInertiaCarryRef.current += delta * wheelInertiaDirectionRef.current;
+      const damping = Math.min(0.985, Math.max(0.72, terminalSettingsRef.current?.smoothScrollInertiaDamping ?? 0.86));
+      wheelInertiaCarryRef.current += wheelInertiaVelocityRef.current;
       const wholeLines =
         wheelInertiaCarryRef.current > 0
           ? Math.floor(wheelInertiaCarryRef.current)
@@ -1206,11 +1180,12 @@ const TerminalComponent: React.FC<TerminalProps> = ({
         activeTerm.scrollLines(wholeLines);
         wheelInertiaCarryRef.current -= wholeLines;
       }
-      if (progress < 1 && wheelInertiaAppliedRef.current < wheelInertiaTotalRef.current) {
+      wheelInertiaVelocityRef.current *= damping;
+      if (Math.abs(wheelInertiaVelocityRef.current) > 0.04) {
         wheelInertiaRafRef.current = window.requestAnimationFrame(runInertia);
         return;
       }
-      // Keep sub-line carry so tiny wheel deltas can accumulate across bursts.
+      wheelInertiaVelocityRef.current = 0;
     };
 
     if (wheelInertiaRafRef.current === null) {
@@ -1238,10 +1213,8 @@ const TerminalComponent: React.FC<TerminalProps> = ({
         window.cancelAnimationFrame(wheelInertiaRafRef.current);
         wheelInertiaRafRef.current = null;
       }
+      wheelInertiaVelocityRef.current = 0;
       wheelInertiaCarryRef.current = 0;
-      wheelInertiaTotalRef.current = 0;
-      wheelInertiaAppliedRef.current = 0;
-      wheelInertiaLastProgressRef.current = 0;
       wheelInertiaBurstCountRef.current = 0;
       wheelInertiaLastInputMsRef.current = 0;
       flushTerminalWheelZoom();

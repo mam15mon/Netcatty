@@ -341,6 +341,7 @@ const en: Messages = {
   'settings.terminal.behavior.smoothScrolling.inertia.desc':
     'Add momentum-style wheel scrolling similar to trackpad feel.',
   'settings.terminal.behavior.smoothScrolling.inertiaStrength': 'Inertia strength',
+  'settings.terminal.behavior.smoothScrolling.inertiaDamping': 'Damping',
   'settings.terminal.behavior.smoothScrolling.inertiaDuration': 'Inertia duration',
   'settings.terminal.behavior.smoothScrolling.inertiaCurve': 'Curve preset',
   'settings.terminal.behavior.smoothScrolling.inertiaCurve.natural': 'Natural',

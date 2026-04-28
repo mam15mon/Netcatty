@@ -1443,6 +1443,7 @@ const zhCN: Messages = {
   'settings.terminal.behavior.smoothScrolling.inertia': '惯性滚动',
   'settings.terminal.behavior.smoothScrolling.inertia.desc': '为鼠标滚轮添加类似触控板的惯性手感',
   'settings.terminal.behavior.smoothScrolling.inertiaStrength': '惯性强度',
+  'settings.terminal.behavior.smoothScrolling.inertiaDamping': '阻尼系数',
   'settings.terminal.behavior.smoothScrolling.inertiaDuration': '惯性时长',
   'settings.terminal.behavior.smoothScrolling.inertiaCurve': '曲线预设',
   'settings.terminal.behavior.smoothScrolling.inertiaCurve.natural': '自然',
