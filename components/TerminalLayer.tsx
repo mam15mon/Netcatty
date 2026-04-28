@@ -2848,6 +2848,13 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
             style={{
               backgroundColor: terminalTheme.colors.background,
             }}
+            onMouseDown={(e) => {
+              // Keep workspace pane focus unchanged when interacting with compose input.
+              e.stopPropagation();
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+            }}
           >
               <TerminalComposeBar
                   value={composerDraft}
