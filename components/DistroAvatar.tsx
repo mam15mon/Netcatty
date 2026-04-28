@@ -27,7 +27,7 @@ export const DISTRO_LOGOS: Record<string, string> = {
   cisco: "/distro/cisco.svg",
   juniper: "/distro/juniper.svg",
   huawei: "/distro/huawei.svg",
-  h3c: "/distro/hpe.svg",
+  h3c: "/distro/h3c.svg",
   hpe: "/distro/hpe.svg",
   mikrotik: "/distro/mikrotik.svg",
   fortinet: "/distro/fortinet.svg",
