@@ -453,6 +453,8 @@ const AutocompletePopup: React.FC<AutocompletePopupProps> = ({
             padding: "10px 12px",
             maxWidth: "280px",
             minWidth: "160px",
+            maxHeight: `${effectiveMaxHeight}px`,
+            overflowY: "auto",
             alignSelf: renderUpward ? "flex-end" : "flex-start",
           }}
         >
