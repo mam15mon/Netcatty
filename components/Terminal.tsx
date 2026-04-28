@@ -1138,7 +1138,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     const impulse = normalized * (terminalSettings.smoothScrollInertiaStrength || 1);
     const minDistancePerBurst = 1.6;
     const effectiveImpulse = Math.max(minDistancePerBurst, impulse);
-    const maxTotalDistance = 40;
+    const maxTotalDistance = 56;
     const now = performance.now();
     const burstWindowMs = 180;
     const sameDirection = wheelInertiaDirectionRef.current === direction;
@@ -1149,9 +1149,9 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       wheelInertiaBurstCountRef.current = 0;
     }
     wheelInertiaLastInputMsRef.current = now;
-    const burstMultiplier = 1 + wheelInertiaBurstCountRef.current * 0.18;
+    const burstMultiplier = 1 + wheelInertiaBurstCountRef.current * 0.28;
     const burstImpulse = effectiveImpulse * burstMultiplier;
-    const immediateRatio = 0.38;
+    const immediateRatio = 0.52;
     const immediateLinesFloat = burstImpulse * immediateRatio * direction;
     const immediateLines =
       immediateLinesFloat > 0

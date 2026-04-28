@@ -837,7 +837,7 @@ const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   scrollOnPaste: true,
   smoothScrolling: false,
   smoothScrollInertia: false,
-  smoothScrollInertiaStrength: 1.2,
+  smoothScrollInertiaStrength: 1.8,
   smoothScrollInertiaDurationMs: 300,
   smoothScrollInertiaCurve: 'responsive',
   rightClickBehavior: 'context-menu',
