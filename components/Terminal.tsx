@@ -1134,15 +1134,17 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     const direction: 1 | -1 = rawDelta >= 0 ? 1 : -1;
     const normalized = Math.min(Math.abs(rawDelta), 3);
     const impulse = normalized * (terminalSettings.smoothScrollInertiaStrength || 1);
+    const minDistancePerBurst = 0.9;
+    const effectiveImpulse = Math.max(minDistancePerBurst, impulse);
     const maxTotalDistance = 24;
     const now = performance.now();
 
     if (wheelInertiaRafRef.current !== null && wheelInertiaDirectionRef.current === direction) {
       const remaining = Math.max(0, wheelInertiaTotalRef.current - wheelInertiaAppliedRef.current);
-      wheelInertiaTotalRef.current = Math.min(maxTotalDistance, remaining + impulse);
+      wheelInertiaTotalRef.current = Math.min(maxTotalDistance, remaining + effectiveImpulse);
     } else {
       wheelInertiaDirectionRef.current = direction;
-      wheelInertiaTotalRef.current = Math.min(maxTotalDistance, impulse);
+      wheelInertiaTotalRef.current = Math.min(maxTotalDistance, effectiveImpulse);
     }
     wheelInertiaAppliedRef.current = 0;
     wheelInertiaStartMsRef.current = now;
@@ -1182,7 +1184,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
         wheelInertiaRafRef.current = window.requestAnimationFrame(runInertia);
         return;
       }
-      wheelInertiaCarryRef.current = 0;
+      // Keep sub-line carry so tiny wheel deltas can accumulate across bursts.
     };
 
     if (wheelInertiaRafRef.current === null) {
