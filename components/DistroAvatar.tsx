@@ -57,7 +57,7 @@ export const DISTRO_COLORS: Record<string, string> = {
   cisco: "bg-[#1BA0D7]",
   juniper: "bg-[#0A6EB4]",
   huawei: "bg-[#CF0A2C]",
-  h3c: "bg-[#01A982]",
+  h3c: "bg-white",
   hpe: "bg-[#01A982]",
   mikrotik: "bg-[#293239]",
   fortinet: "bg-[#EE3124]",
@@ -127,7 +127,11 @@ const DistroAvatarInner: React.FC<DistroAvatarProps> = ({
         <img
           src={logo}
           alt={distro || host.os}
-          className={cn("object-contain invert brightness-0", iconSize)}
+          className={cn(
+            "object-contain",
+            distro === "h3c" ? "" : "invert brightness-0",
+            iconSize,
+          )}
           onError={() => setErrored(true)}
         />
       </div>
