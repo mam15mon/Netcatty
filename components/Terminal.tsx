@@ -1059,6 +1059,8 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   const wheelInertiaDirectionRef = useRef<1 | -1>(1);
   const wheelInertiaStartMsRef = useRef(0);
   const wheelInertiaLastProgressRef = useRef(0);
+  const wheelInertiaBurstCountRef = useRef(0);
+  const wheelInertiaLastInputMsRef = useRef(0);
 
   useEffect(() => {
     wheelZoomSizeRef.current = effectiveFontSize;
@@ -1138,13 +1140,24 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     const effectiveImpulse = Math.max(minDistancePerBurst, impulse);
     const maxTotalDistance = 40;
     const now = performance.now();
+    const burstWindowMs = 180;
+    const sameDirection = wheelInertiaDirectionRef.current === direction;
+    const withinBurstWindow = now - wheelInertiaLastInputMsRef.current <= burstWindowMs;
+    if (sameDirection && withinBurstWindow) {
+      wheelInertiaBurstCountRef.current = Math.min(8, wheelInertiaBurstCountRef.current + 1);
+    } else {
+      wheelInertiaBurstCountRef.current = 0;
+    }
+    wheelInertiaLastInputMsRef.current = now;
+    const burstMultiplier = 1 + wheelInertiaBurstCountRef.current * 0.18;
+    const burstImpulse = effectiveImpulse * burstMultiplier;
 
     if (wheelInertiaRafRef.current !== null && wheelInertiaDirectionRef.current === direction) {
       const remaining = Math.max(0, wheelInertiaTotalRef.current - wheelInertiaAppliedRef.current);
-      wheelInertiaTotalRef.current = Math.min(maxTotalDistance, remaining + effectiveImpulse);
+      wheelInertiaTotalRef.current = Math.min(maxTotalDistance, remaining + burstImpulse);
     } else {
       wheelInertiaDirectionRef.current = direction;
-      wheelInertiaTotalRef.current = Math.min(maxTotalDistance, effectiveImpulse);
+      wheelInertiaTotalRef.current = Math.min(maxTotalDistance, burstImpulse);
     }
     wheelInertiaAppliedRef.current = 0;
     wheelInertiaStartMsRef.current = now;
@@ -1216,6 +1229,8 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       wheelInertiaTotalRef.current = 0;
       wheelInertiaAppliedRef.current = 0;
       wheelInertiaLastProgressRef.current = 0;
+      wheelInertiaBurstCountRef.current = 0;
+      wheelInertiaLastInputMsRef.current = 0;
       flushTerminalWheelZoom();
     };
   }, [flushTerminalWheelZoom, handleTerminalWheel]);
