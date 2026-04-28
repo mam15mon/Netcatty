@@ -45,7 +45,7 @@ import {
   STORAGE_KEY_VAULT_SIDEBAR_COLLAPSED,
 } from "../infrastructure/config/storageKeys";
 import { cn } from "../lib/utils";
-import { matchesSearchQuery } from "../lib/searchMatcher";
+import { matchesHostSearchQuery } from "../lib/searchMatcher";
 import { useInstantThemeSwitch } from "../lib/useInstantThemeSwitch";
 import {
   ConnectionLog,
@@ -348,13 +348,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
   );
 
   const matchesHostSearch = useCallback((host: Host, query: string) => {
-    return matchesSearchQuery(
-      query,
-      host.label,
-      host.hostname,
-      host.group || "",
-      ...(host.tags || []),
-    );
+    return matchesHostSearchQuery(query, host);
   }, []);
 
   // Check if host has multiple protocols enabled (using effective/resolved host)

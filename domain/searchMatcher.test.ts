@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { matchesSearchQuery } from "../lib/searchMatcher.ts";
+import { matchesHostSearchQuery, matchesSearchQuery } from "../lib/searchMatcher.ts";
 
 test("matches mixed Chinese and dash-separated numeric suffix with spaced query", () => {
   assert.equal(
@@ -31,6 +31,30 @@ test("matches IPv4-like query only on contiguous dotted address", () => {
 test("matches compact form across separators", () => {
   assert.equal(
     matchesSearchQuery("prod api 01", "prod-api-01"),
+    true,
+  );
+});
+
+test("host search does not mix human tokens with hostname IP tokens", () => {
+  assert.equal(
+    matchesHostSearchQuery("山东 6-1", {
+      label: "山东-业务交换机2-2",
+      hostname: "10.6.1.88",
+      group: "铁塔网络设备/山东",
+      tags: [],
+    }),
+    false,
+  );
+});
+
+test("host search still supports direct IP matching", () => {
+  assert.equal(
+    matchesHostSearchQuery("10.6.1.88", {
+      label: "山东-业务交换机2-2",
+      hostname: "10.6.1.88",
+      group: "铁塔网络设备/山东",
+      tags: [],
+    }),
     true,
   );
 });

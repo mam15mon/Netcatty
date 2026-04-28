@@ -99,3 +99,36 @@ export function matchesSearchQuery(
     );
   });
 }
+
+/**
+ * Host search should avoid mixing label/group tokens with hostname/IP tokens.
+ * Otherwise queries like "山东 6-1" can accidentally match:
+ * - "山东" from group/label
+ * - "6" / "1" from hostname IP
+ * across different fields.
+ */
+export function matchesHostSearchQuery(
+  query: string,
+  hostLike: {
+    label?: string | null;
+    hostname?: string | null;
+    group?: string | null;
+    tags?: Array<string | null | undefined> | null;
+  },
+): boolean {
+  const normalizedQuery = normalizeText(query);
+  if (!normalizedQuery) return true;
+
+  const tagFields = (hostLike.tags ?? []).filter(
+    (tag): tag is string => typeof tag === "string" && tag.trim().length > 0,
+  );
+  const humanMatch = matchesSearchQuery(
+    normalizedQuery,
+    hostLike.label ?? "",
+    hostLike.group ?? "",
+    ...tagFields,
+  );
+  if (humanMatch) return true;
+
+  return matchesSearchQuery(normalizedQuery, hostLike.hostname ?? "");
+}

@@ -48,7 +48,7 @@ import { AddToWorkspaceDialog } from './components/workspace/AddToWorkspaceDialo
 import { KeyboardInteractiveModal, KeyboardInteractiveRequest } from './components/KeyboardInteractiveModal';
 import { PassphraseModal, PassphraseRequest } from './components/PassphraseModal';
 import { cn } from './lib/utils';
-import { matchesSearchQuery } from './lib/searchMatcher';
+import { matchesHostSearchQuery } from './lib/searchMatcher';
 import { classifyLocalShellType } from './lib/localShell';
 import { useDiscoveredShells, resolveShellSetting } from './lib/useDiscoveredShells';
 import { ConnectionLog, Host, HostProtocol, KnownHost, SerialConfig, Snippet, TerminalSession, TerminalTheme } from './types';
@@ -1547,7 +1547,7 @@ function App({ settings }: { settings: SettingsState }) {
     const term = quickSearch.trim();
     const filtered = term
       ? hosts.filter(h =>
-        matchesSearchQuery(term, h.label, h.hostname, h.group || '', ...(h.tags || []))
+        matchesHostSearchQuery(term, h)
       )
       : hosts;
     return filtered;
