@@ -10,7 +10,7 @@ import {
   sanitizeCredentialValue,
 } from "../../../domain/credentials";
 import { resolveHostAuth } from "../../../domain/sshAuth";
-import { detectVendorFromSshVersion } from "../../../domain/host";
+import { detectVendorFromSshVersion, detectVendorFromWelcomeText } from "../../../domain/host";
 
 /**
  * Per-connection token for stale-timer detection. The renderer reuses the
@@ -24,6 +24,8 @@ import { detectVendorFromSshVersion } from "../../../domain/host";
  * entry per active session, the memory cost is negligible.
  */
 const connectionTokensBySessionId = new Map<string, object>();
+const welcomeProbeBufferBySessionId = new Map<string, string>();
+const welcomeProbeDoneBySessionId = new Set<string>();
 
 const isConnectionTokenCurrent = (sessionId: string, token: object): boolean =>
   connectionTokensBySessionId.get(sessionId) === token;
@@ -238,6 +240,8 @@ const attachSessionToTerminal = (
   clearScheduledTerminalOutputAutoScroll(term);
   ctx.sessionRef.current = id;
   ctx.onSessionAttached?.(id);
+  welcomeProbeBufferBySessionId.delete(id);
+  welcomeProbeDoneBySessionId.delete(id);
 
   ctx.disposeDataRef.current = ctx.terminalBackend.onSessionData(id, (chunk) => {
     let data = chunk;
@@ -248,6 +252,16 @@ const attachSessionToTerminal = (
       data = data.replace(/(?<!\r)\n/g, "\r\n");
     }
     writeSessionData(ctx, term, data);
+    if (!welcomeProbeDoneBySessionId.has(id)) {
+      const prev = welcomeProbeBufferBySessionId.get(id) || "";
+      const merged = (prev + data).slice(-8192);
+      welcomeProbeBufferBySessionId.set(id, merged);
+      const vendor = detectVendorFromWelcomeText(merged);
+      if (vendor) {
+        welcomeProbeDoneBySessionId.add(id);
+        ctx.onOsDetected?.(ctx.host.id, vendor);
+      }
+    }
     if (!ctx.hasConnectedRef.current) {
       ctx.updateStatus("connected");
       opts?.onConnected?.();
@@ -266,6 +280,8 @@ const attachSessionToTerminal = (
   });
 
   ctx.disposeExitRef.current = ctx.terminalBackend.onSessionExit(id, (evt) => {
+    welcomeProbeBufferBySessionId.delete(id);
+    welcomeProbeDoneBySessionId.delete(id);
     clearScheduledTerminalOutputAutoScroll(term);
     ctx.updateStatus("disconnected");
     if (evt.error) {

@@ -120,6 +120,23 @@ export const detectVendorFromSshVersion = (softwareVersion?: string): '' | Netwo
 };
 
 /**
+ * Secondary vendor detection from early terminal banner/welcome text.
+ * This is only used when SSH software-version banner is empty/unknown.
+ *
+ * User requirement: do NOT infer from prompt shape alone; only use explicit
+ * vendor keywords in the welcome text.
+ */
+export const detectVendorFromWelcomeText = (text?: string): '' | NetworkDeviceVendor => {
+  const s = (text || '').trim();
+  if (!s) return '';
+
+  if (/\bHuawei(?:\s+Technologies)?\b/i.test(s)) return 'huawei';
+  if (/\bVRP\b/i.test(s)) return 'huawei';
+
+  return '';
+};
+
+/**
  * Classify a distro/vendor ID into a high-level device class. Features that
  * assume a POSIX shell (periodic stats polling, /etc/os-release probing, etc.)
  * should only run when this returns `linux-like`.
