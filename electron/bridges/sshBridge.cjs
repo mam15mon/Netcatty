@@ -293,6 +293,35 @@ function buildAlgorithms(legacyEnabled) {
 // Session storage - shared reference passed from main
 let sessions = null;
 let electronModule = null;
+// Limit concurrent SSH connection handshakes to reduce burst load on
+// network devices/proxies (VTY/session limits) and avoid parser errors from
+// abruptly reset sockets during header exchange.
+const MAX_CONCURRENT_SSH_STARTS = 3;
+let activeSshStarts = 0;
+const sshStartWaitQueue = [];
+
+function acquireSshStartSlot() {
+  if (activeSshStarts < MAX_CONCURRENT_SSH_STARTS) {
+    activeSshStarts += 1;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    sshStartWaitQueue.push(resolve);
+  });
+}
+
+function releaseSshStartSlot() {
+  if (sshStartWaitQueue.length > 0) {
+    const next = sshStartWaitQueue.shift();
+    try {
+      next?.();
+    } catch {
+      activeSshStarts = Math.max(0, activeSshStarts - 1);
+    }
+    return;
+  }
+  activeSshStarts = Math.max(0, activeSshStarts - 1);
+}
 
 // Authentication method cache - remembers successful auth methods per host
 // Key format: "username@hostname:port"
@@ -1731,6 +1760,7 @@ async function generateKeyPair(event, options) {
  * Auth failures are expected when fallback to password is available
  */
 async function startSSHSessionWrapper(event, options) {
+  await acquireSshStartSlot();
   try {
     return await startSSHSession(event, options);
   } catch (err) {
@@ -1812,6 +1842,8 @@ async function startSSHSessionWrapper(event, options) {
     connError.level = err.level || 'client-socket';
     connError.code = err.code;
     throw connError;
+  } finally {
+    releaseSshStartSlot();
   }
 }
 
