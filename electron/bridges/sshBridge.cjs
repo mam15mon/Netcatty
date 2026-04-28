@@ -1781,16 +1781,33 @@ async function generateKeyPair(event, options) {
  * Auth failures are expected when fallback to password is available
  */
 async function startSSHSessionWrapper(event, options) {
+  const sessionId =
+    options?.sessionId ||
+    `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const normalizedOptions = { ...options, sessionId };
+  const sender = event.sender;
+  const targetLabel = normalizedOptions?.hostname || "host";
+  const shouldQueue = activeSshStarts >= MAX_CONCURRENT_SSH_STARTS;
+  if (shouldQueue && sender && !sender.isDestroyed()) {
+    sender.send("netcatty:chain:progress", {
+      sessionId,
+      hop: 1,
+      total: 1,
+      label: targetLabel,
+      status: "queued",
+    });
+  }
+
   await acquireSshStartSlot();
   try {
     try {
-      return await startSSHSession(event, options);
+      return await startSSHSession(event, normalizedOptions);
     } catch (firstErr) {
       if (!isTransientSshStartError(firstErr)) throw firstErr;
       // Retry once for transient handshake/parser failures commonly seen when
       // many sessions open at once against constrained devices.
       await sleep(120);
-      return await startSSHSession(event, options);
+      return await startSSHSession(event, normalizedOptions);
     }
   } catch (err) {
     const isAuthError = err.message?.toLowerCase().includes('authentication') ||

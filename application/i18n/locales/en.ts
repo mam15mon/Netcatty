@@ -1315,6 +1315,7 @@ const en: Messages = {
   'terminal.auth.proxyCredentialsUnavailable': 'Proxy credentials cannot be decrypted on this device. Open host settings and re-enter the proxy password.',
   'terminal.auth.keyUnavailableFallbackPassword': 'Saved SSH key is unavailable on this device. Falling back to password authentication.',
   'terminal.progress.timeoutIn': 'Timeout in {seconds}s',
+  'terminal.progress.queued': 'Queued for connection slot',
   'terminal.progress.disconnected': 'Disconnected',
   'terminal.progress.cancelling': 'Cancelling...',
   'terminal.progress.startOver': 'Start over',

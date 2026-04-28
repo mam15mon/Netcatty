@@ -907,6 +907,7 @@ const zhCN: Messages = {
   'terminal.auth.keyUnavailableFallbackPassword': '已保存 SSH 密钥在当前设备不可用，改用密码认证。',
   'terminal.connectionErrorTitle': '连接错误',
   'terminal.progress.timeoutIn': '将在 {seconds}s 后超时',
+  'terminal.progress.queued': '正在排队等待连接槽位',
   'terminal.progress.disconnected': '已断开',
   'terminal.progress.cancelling': '正在取消...',
   'terminal.progress.startOver': '重新开始',

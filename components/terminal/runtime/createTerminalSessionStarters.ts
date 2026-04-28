@@ -553,6 +553,9 @@ export const createTerminalSessionStarters = (ctx: TerminalSessionStartersContex
         const prefix = total > 1 ? `[${hop}/${total}] ` : '';
 
         switch (status) {
+          case 'queued':
+            logLine = `${prefix}${label} - ${tr("terminal.progress.queued", "Queued for connection slot")}...`;
+            break;
           case 'connecting':
             logLine = `${prefix}${tr("terminal.progress.connecting", "Connecting to")} ${label}...`;
             break;
