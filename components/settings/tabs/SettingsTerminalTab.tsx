@@ -911,6 +911,55 @@ export default function SettingsTerminalTab(props: {
         >
           <Toggle checked={terminalSettings.smoothScrolling} onChange={(v) => updateTerminalSetting("smoothScrolling", v)} />
         </SettingRow>
+        {terminalSettings.smoothScrolling && (
+          <div className="py-3 space-y-3">
+            <SettingRow
+              label={t("settings.terminal.behavior.smoothScrolling.inertia")}
+              description={t("settings.terminal.behavior.smoothScrolling.inertia.desc")}
+            >
+              <Toggle
+                checked={terminalSettings.smoothScrollInertia}
+                onChange={(v) => updateTerminalSetting("smoothScrollInertia", v)}
+              />
+            </SettingRow>
+            {terminalSettings.smoothScrollInertia && (
+              <>
+                <SettingRow label={t("settings.terminal.behavior.smoothScrolling.inertiaStrength")}>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="range"
+                      min={0.5}
+                      max={3}
+                      step={0.1}
+                      value={terminalSettings.smoothScrollInertiaStrength}
+                      onChange={(e) => updateTerminalSetting("smoothScrollInertiaStrength", parseFloat(e.target.value))}
+                      className="w-24 accent-primary"
+                    />
+                    <span className="text-sm text-muted-foreground w-10 text-center">
+                      {terminalSettings.smoothScrollInertiaStrength.toFixed(1)}
+                    </span>
+                  </div>
+                </SettingRow>
+                <SettingRow label={t("settings.terminal.behavior.smoothScrolling.inertiaFriction")}>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="range"
+                      min={0.8}
+                      max={0.98}
+                      step={0.01}
+                      value={terminalSettings.smoothScrollInertiaFriction}
+                      onChange={(e) => updateTerminalSetting("smoothScrollInertiaFriction", parseFloat(e.target.value))}
+                      className="w-24 accent-primary"
+                    />
+                    <span className="text-sm text-muted-foreground w-10 text-center">
+                      {terminalSettings.smoothScrollInertiaFriction.toFixed(2)}
+                    </span>
+                  </div>
+                </SettingRow>
+              </>
+            )}
+          </div>
+        )}
 
         <SettingRow
           label={t("settings.terminal.behavior.linkModifier")}

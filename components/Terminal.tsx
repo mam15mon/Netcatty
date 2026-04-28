@@ -1052,6 +1052,9 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   const wheelZoomFitRafRef = useRef<number | null>(null);
   const wheelZoomSizeRef = useRef(effectiveFontSize);
   const effectiveFontSizeRef = useRef(effectiveFontSize);
+  const wheelInertiaVelocityRef = useRef(0);
+  const wheelInertiaRafRef = useRef<number | null>(null);
+  const wheelInertiaCarryRef = useRef(0);
 
   useEffect(() => {
     wheelZoomSizeRef.current = effectiveFontSize;
@@ -1107,14 +1110,57 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   onTerminalZoomStepRef.current = adjustTerminalFontSizeByStep;
 
   const handleTerminalWheel = useCallback((e: WheelEvent) => {
-    if (!onAdjustTerminalFontSize) return;
-    if (!(e.ctrlKey || e.metaKey)) return;
+    if (onAdjustTerminalFontSize && (e.ctrlKey || e.metaKey)) {
+      if (e.deltaY === 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      adjustTerminalFontSizeByStep(e.deltaY < 0 ? 1 : -1);
+      return;
+    }
+
+    const term = termRef.current;
+    if (!term || !terminalSettings.smoothScrolling || !terminalSettings.smoothScrollInertia) return;
     if (e.deltaY === 0) return;
 
     e.preventDefault();
     e.stopPropagation();
-    adjustTerminalFontSizeByStep(e.deltaY < 0 ? 1 : -1);
-  }, [adjustTerminalFontSizeByStep, onAdjustTerminalFontSize]);
+
+    const modeFactor = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1;
+    const impulse = (e.deltaY * modeFactor / 50) * (terminalSettings.smoothScrollInertiaStrength || 1);
+    wheelInertiaVelocityRef.current += impulse;
+
+    const runInertia = () => {
+      wheelInertiaRafRef.current = null;
+      const activeTerm = termRef.current;
+      if (!activeTerm) return;
+
+      const friction = terminalSettingsRef.current?.smoothScrollInertiaFriction ?? 0.9;
+      const clampedFriction = Math.min(0.995, Math.max(0.7, friction));
+
+      wheelInertiaCarryRef.current += wheelInertiaVelocityRef.current;
+      const wholeLines =
+        wheelInertiaCarryRef.current > 0
+          ? Math.floor(wheelInertiaCarryRef.current)
+          : Math.ceil(wheelInertiaCarryRef.current);
+      if (wholeLines !== 0) {
+        activeTerm.scrollLines(wholeLines);
+        wheelInertiaCarryRef.current -= wholeLines;
+      }
+
+      wheelInertiaVelocityRef.current *= clampedFriction;
+      if (Math.abs(wheelInertiaVelocityRef.current) < 0.02) {
+        wheelInertiaVelocityRef.current = 0;
+        wheelInertiaCarryRef.current = 0;
+        return;
+      }
+
+      wheelInertiaRafRef.current = window.requestAnimationFrame(runInertia);
+    };
+
+    if (wheelInertiaRafRef.current === null) {
+      wheelInertiaRafRef.current = window.requestAnimationFrame(runInertia);
+    }
+  }, [adjustTerminalFontSizeByStep, onAdjustTerminalFontSize, terminalSettings.smoothScrollInertia, terminalSettings.smoothScrollInertiaStrength, terminalSettings.smoothScrolling]);
 
   useEffect(() => {
     const root = terminalRootRef.current;
@@ -1132,6 +1178,12 @@ const TerminalComponent: React.FC<TerminalProps> = ({
         window.cancelAnimationFrame(wheelZoomFitRafRef.current);
         wheelZoomFitRafRef.current = null;
       }
+      if (wheelInertiaRafRef.current !== null) {
+        window.cancelAnimationFrame(wheelInertiaRafRef.current);
+        wheelInertiaRafRef.current = null;
+      }
+      wheelInertiaVelocityRef.current = 0;
+      wheelInertiaCarryRef.current = 0;
       flushTerminalWheelZoom();
     };
   }, [flushTerminalWheelZoom, handleTerminalWheel]);

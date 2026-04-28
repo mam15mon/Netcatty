@@ -337,6 +337,11 @@ const en: Messages = {
   'settings.terminal.behavior.smoothScrolling': 'Smooth scrolling',
   'settings.terminal.behavior.smoothScrolling.desc':
     'Animate terminal viewport scrolling instead of jumping instantly',
+  'settings.terminal.behavior.smoothScrolling.inertia': 'Inertial scrolling',
+  'settings.terminal.behavior.smoothScrolling.inertia.desc':
+    'Add momentum-style wheel scrolling similar to trackpad feel.',
+  'settings.terminal.behavior.smoothScrolling.inertiaStrength': 'Inertia strength',
+  'settings.terminal.behavior.smoothScrolling.inertiaFriction': 'Friction',
   'settings.terminal.behavior.linkModifier': 'Link modifier key',
   'settings.terminal.behavior.linkModifier.desc': 'Hold this key to click on links in terminal',
   'settings.terminal.behavior.linkModifier.none': 'None (click directly)',

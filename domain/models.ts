@@ -476,6 +476,9 @@ export interface TerminalSettings {
   scrollOnPaste: boolean; // Scroll terminal to bottom on paste
 
   smoothScrolling: boolean; // Animate viewport scrolling instead of jumping instantly
+  smoothScrollInertia: boolean; // Add momentum-style inertial wheel scrolling
+  smoothScrollInertiaStrength: number; // Wheel impulse multiplier for inertial scrolling
+  smoothScrollInertiaFriction: number; // Per-frame velocity retention (0-1), lower = faster stop
 
   // Mouse
   rightClickBehavior: RightClickBehavior;
@@ -832,6 +835,9 @@ const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   scrollOnKeyPress: false,
   scrollOnPaste: true,
   smoothScrolling: false,
+  smoothScrollInertia: false,
+  smoothScrollInertiaStrength: 1,
+  smoothScrollInertiaFriction: 0.9,
   rightClickBehavior: 'context-menu',
   copyOnSelect: false,
   middleClickPaste: true,
