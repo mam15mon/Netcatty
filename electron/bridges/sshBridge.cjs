@@ -299,6 +299,7 @@ let electronModule = null;
 const MAX_CONCURRENT_SSH_STARTS = 3;
 let activeSshStarts = 0;
 const sshStartWaitQueue = [];
+const SSH_START_DEQUEUE_DELAY_MS = 35;
 
 function acquireSshStartSlot() {
   if (activeSshStarts < MAX_CONCURRENT_SSH_STARTS) {
@@ -313,14 +314,34 @@ function acquireSshStartSlot() {
 function releaseSshStartSlot() {
   if (sshStartWaitQueue.length > 0) {
     const next = sshStartWaitQueue.shift();
-    try {
-      next?.();
-    } catch {
-      activeSshStarts = Math.max(0, activeSshStarts - 1);
-    }
+    // Small stagger between queued connection starts to avoid handshake bursts
+    // against devices/proxies that enforce strict per-second limits.
+    setTimeout(() => {
+      try {
+        next?.();
+      } catch {
+        activeSshStarts = Math.max(0, activeSshStarts - 1);
+      }
+    }, SSH_START_DEQUEUE_DELAY_MS);
     return;
   }
   activeSshStarts = Math.max(0, activeSshStarts - 1);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientSshStartError(err) {
+  const message = String(err?.message || "").toLowerCase();
+  const code = String(err?.code || "").toUpperCase();
+  return (
+    message.includes("invalid header: expected newline") ||
+    message.includes("connection reset") ||
+    code === "ECONNRESET" ||
+    code === "ETIMEDOUT" ||
+    code === "EPIPE"
+  );
 }
 
 // Authentication method cache - remembers successful auth methods per host
@@ -1762,7 +1783,15 @@ async function generateKeyPair(event, options) {
 async function startSSHSessionWrapper(event, options) {
   await acquireSshStartSlot();
   try {
-    return await startSSHSession(event, options);
+    try {
+      return await startSSHSession(event, options);
+    } catch (firstErr) {
+      if (!isTransientSshStartError(firstErr)) throw firstErr;
+      // Retry once for transient handshake/parser failures commonly seen when
+      // many sessions open at once against constrained devices.
+      await sleep(120);
+      return await startSSHSession(event, options);
+    }
   } catch (err) {
     const isAuthError = err.message?.toLowerCase().includes('authentication') ||
       err.message?.toLowerCase().includes('auth') ||
