@@ -1385,6 +1385,7 @@ function App({ settings }: { settings: SettingsState }) {
         break;
       case 'quickSwitch':
       case 'commandPalette':
+        setQuickSearch('');
         setIsQuickSwitcherOpen(true);
         break;
       case 'newWorkspace':
@@ -1786,6 +1787,7 @@ function App({ settings }: { settings: SettingsState }) {
   }, [openSettingsWindow, resolvedTheme, setTheme, t, theme]);
 
   const handleOpenQuickSwitcher = useCallback(() => {
+    setQuickSearch('');
     setIsQuickSwitcherOpen(true);
   }, []);
 

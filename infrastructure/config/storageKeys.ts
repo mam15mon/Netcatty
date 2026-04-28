@@ -20,6 +20,7 @@ export const STORAGE_KEY_TERM_COMPOSE_BAR_OPEN = 'netcatty_term_compose_bar_open
 export const STORAGE_KEY_TERM_COMPOSE_BAR_DRAFT = 'netcatty_term_compose_bar_draft_v1';
 export const STORAGE_KEY_TERM_COMPOSE_BAR_SEND_TARGET = 'netcatty_term_compose_bar_send_target_v1';
 export const STORAGE_KEY_TERM_COMPOSE_BAR_HEIGHT = 'netcatty_term_compose_bar_height_v1';
+export const STORAGE_KEY_TERM_COMPOSE_BAR_HISTORY = 'netcatty_term_compose_bar_history_v1';
 export const STORAGE_KEY_HOTKEY_SCHEME = 'netcatty_hotkey_scheme_v1';
 export const STORAGE_KEY_CUSTOM_KEY_BINDINGS = 'netcatty_custom_key_bindings_v1';
 export const STORAGE_KEY_HOTKEY_RECORDING = 'netcatty_hotkey_recording_v1';

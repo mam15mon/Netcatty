@@ -155,6 +155,39 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
     () => sessions.filter((s) => !s.workspaceId),
     [sessions]
   );
+  const trimmedQuery = query.trim();
+  const builtInTabs = useMemo(() => {
+    if (!trimmedQuery) return showSftpTab ? ["vault", "sftp"] : ["vault"];
+    const matched: string[] = [];
+    if (matchesSearchQuery(trimmedQuery, "Vaults", "vault", "hosts", "connections")) {
+      matched.push("vault");
+    }
+    if (
+      showSftpTab &&
+      matchesSearchQuery(trimmedQuery, "SFTP", "files", "transfer", "sftp")
+    ) {
+      matched.push("sftp");
+    }
+    return matched;
+  }, [showSftpTab, trimmedQuery]);
+  const filteredOrphanSessions = useMemo(() => {
+    if (!trimmedQuery) return orphanSessions;
+    return orphanSessions.filter((session) =>
+      matchesSearchQuery(
+        trimmedQuery,
+        session.hostLabel || '',
+        session.hostname || '',
+        session.id,
+      ),
+    );
+  }, [orphanSessions, trimmedQuery]);
+  const filteredWorkspaces = useMemo(() => {
+    if (!trimmedQuery) return workspaces;
+    return workspaces.filter((workspace) =>
+      matchesSearchQuery(trimmedQuery, workspace.title, workspace.id),
+    );
+  }, [trimmedQuery, workspaces]);
+  const shouldShowLocalTerminalFallback = filteredShells.length === 0 && !!onCreateLocalTerminal && !trimmedQuery;
 
   // Always show categorized view (Hosts/Tabs/Quick connect)
   const showCategorized = true;
@@ -169,12 +202,13 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
         items.push({ type: "host", id: host.id, data: host }),
       );
       // Tabs (built-in + sessions + workspaces)
-      items.push({ type: "tab", id: "vault" });
-      if (showSftpTab) items.push({ type: "tab", id: "sftp" });
-      orphanSessions.forEach((s) =>
+      builtInTabs.forEach((tabId) => {
+        items.push({ type: "tab", id: tabId });
+      });
+      filteredOrphanSessions.forEach((s) =>
         items.push({ type: "tab", id: s.id, data: s }),
       );
-      workspaces.forEach((w) =>
+      filteredWorkspaces.forEach((w) =>
         items.push({ type: "workspace", id: w.id, data: w }),
       );
       // Local shells (or fallback action if discovery not ready)
@@ -182,7 +216,7 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
         filteredShells.forEach((shell) =>
           items.push({ type: "shell", id: shell.id }),
         );
-      } else {
+      } else if (shouldShowLocalTerminalFallback) {
         items.push({ type: "action", id: "local-terminal" });
       }
     } else {
@@ -203,7 +237,15 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
     });
 
     return { flatItems: items, itemIndexMap: indexMap };
-  }, [showCategorized, results, orphanSessions, workspaces, filteredShells, showSftpTab]);
+  }, [
+    showCategorized,
+    results,
+    builtInTabs,
+    filteredOrphanSessions,
+    filteredWorkspaces,
+    filteredShells,
+    shouldShowLocalTerminalFallback,
+  ]);
 
   // O(1) index lookup
   const getItemIndex = useCallback((type: string, id: string) => {
@@ -394,7 +436,7 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
               </div>
 
               {/* Built-in tabs */}
-              {(showSftpTab ? ["vault", "sftp"] : ["vault"]).map((tabId) => {
+              {builtInTabs.map((tabId) => {
                 const idx = getItemIndex("tab", tabId);
                 const isSelected = idx === selectedIndex;
                 const icon =
@@ -426,7 +468,7 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
               })}
 
               {/* Workspaces */}
-              {workspaces.map((workspace) => {
+              {filteredWorkspaces.map((workspace) => {
                 const idx = getItemIndex("workspace", workspace.id);
                 const isSelected = idx === selectedIndex;
 
@@ -453,7 +495,7 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
               })}
 
               {/* Orphan sessions */}
-              {orphanSessions.map((session) => {
+              {filteredOrphanSessions.map((session) => {
                 const idx = getItemIndex("tab", session.id);
                 const isSelected = idx === selectedIndex;
 
@@ -522,7 +564,7 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
                   );
                 })}
               </div>
-            ) : onCreateLocalTerminal && (
+            ) : shouldShowLocalTerminalFallback && (
               <div>
                 <div className="px-4 py-1.5">
                   <span className="text-xs font-medium text-muted-foreground">
@@ -549,6 +591,11 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
                   </div>
                   <span className="text-sm font-medium">{t("qs.localTerminal")}</span>
                 </div>
+              </div>
+            )}
+            {flatItems.length === 0 && (
+              <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+                {t('selectHost.noHostsFound')}
               </div>
             )}
           </div>

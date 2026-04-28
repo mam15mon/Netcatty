@@ -10,8 +10,9 @@ import { Check, Circle, Plus, Radio, Trash2, X } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { useStoredNumber } from '../../application/state/useStoredNumber';
+import { useStoredString } from '../../application/state/useStoredString';
 import { cn } from '../../lib/utils';
-import { STORAGE_KEY_TERM_COMPOSE_BAR_HEIGHT } from '../../infrastructure/config/storageKeys';
+import { STORAGE_KEY_TERM_COMPOSE_BAR_HEIGHT, STORAGE_KEY_TERM_COMPOSE_BAR_HISTORY } from '../../infrastructure/config/storageKeys';
 import { Snippet } from '../../types';
 import {
     ContextMenu,
@@ -30,6 +31,7 @@ import {
 } from "../ui/select";
 
 type ComposeSendTarget = 'current-tab' | 'current-split' | 'all-sessions';
+const MAX_COMPOSE_HISTORY_ENTRIES = 200;
 
 export interface TerminalComposeBarProps {
     onSend: (text: string) => void;
@@ -143,6 +145,26 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
     const sendLockRef = useRef(false);
     const [internalValue, setInternalValue] = useState('');
     const inputValue = value ?? internalValue;
+    const [historyPayload, setHistoryPayload] = useStoredString(
+        STORAGE_KEY_TERM_COMPOSE_BAR_HISTORY,
+        '[]',
+        undefined,
+        { maxPersistedLength: 65536 },
+    );
+    const composeHistory = useMemo<string[]>(() => {
+        try {
+            const parsed = JSON.parse(historyPayload);
+            if (!Array.isArray(parsed)) return [];
+            return parsed
+                .filter((entry): entry is string => typeof entry === 'string')
+                .map((entry) => entry.replace(/\r\n?/g, '\n').trim())
+                .filter((entry) => entry.length > 0);
+        } catch {
+            return [];
+        }
+    }, [historyPayload]);
+    const [historyIndex, setHistoryIndex] = useState<number | null>(null);
+    const historyDraftRef = useRef('');
 
     useEffect(() => {
         const timer = setTimeout(() => textareaRef.current?.focus(), 50);
@@ -157,12 +179,75 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
         setInternalValue(next);
     }, [onValueChange]);
 
+    const applyHistoryEntry = useCallback((next: string) => {
+        setComposeText(next);
+        if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(() => {
+                const textarea = textareaRef.current;
+                if (!textarea) return;
+                const end = textarea.value.length;
+                textarea.setSelectionRange(end, end);
+            });
+        }
+    }, [setComposeText]);
+
+    const navigateHistory = useCallback((direction: 'up' | 'down') => {
+        if (composeHistory.length === 0) return;
+
+        if (direction === 'up') {
+            if (historyIndex === null) {
+                historyDraftRef.current = inputValue;
+                const newest = composeHistory.length - 1;
+                setHistoryIndex(newest);
+                applyHistoryEntry(composeHistory[newest]);
+                return;
+            }
+            if (historyIndex > 0) {
+                const nextIndex = historyIndex - 1;
+                setHistoryIndex(nextIndex);
+                applyHistoryEntry(composeHistory[nextIndex]);
+            }
+            return;
+        }
+
+        if (historyIndex === null) return;
+        if (historyIndex < composeHistory.length - 1) {
+            const nextIndex = historyIndex + 1;
+            setHistoryIndex(nextIndex);
+            applyHistoryEntry(composeHistory[nextIndex]);
+            return;
+        }
+
+        setHistoryIndex(null);
+        applyHistoryEntry(historyDraftRef.current);
+        historyDraftRef.current = '';
+    }, [applyHistoryEntry, composeHistory, historyIndex, inputValue]);
+
+    useEffect(() => {
+        if (historyIndex !== null && historyIndex >= composeHistory.length) {
+            setHistoryIndex(composeHistory.length > 0 ? composeHistory.length - 1 : null);
+        }
+    }, [composeHistory.length, historyIndex]);
+
     const handleSend = useCallback(() => {
         if (sendLockRef.current) return;
         sendLockRef.current = true;
         const text = inputValue;
+        const normalizedHistoryEntry = text.replace(/\r\n?/g, '\n').trim();
+        if (normalizedHistoryEntry) {
+            const latestEntry = composeHistory[composeHistory.length - 1];
+            if (latestEntry !== normalizedHistoryEntry) {
+                const nextHistory = [...composeHistory, normalizedHistoryEntry];
+                const boundedHistory = nextHistory.length > MAX_COMPOSE_HISTORY_ENTRIES
+                    ? nextHistory.slice(nextHistory.length - MAX_COMPOSE_HISTORY_ENTRIES)
+                    : nextHistory;
+                setHistoryPayload(JSON.stringify(boundedHistory));
+            }
+        }
         onSend(text);
         setComposeText('');
+        setHistoryIndex(null);
+        historyDraftRef.current = '';
         textareaRef.current?.focus();
         if (typeof requestAnimationFrame === 'function') {
             requestAnimationFrame(() => {
@@ -173,7 +258,7 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                 sendLockRef.current = false;
             }, 0);
         }
-    }, [inputValue, onSend, setComposeText]);
+    }, [composeHistory, inputValue, onSend, setComposeText, setHistoryPayload]);
 
     const handleSnippetExecute = useCallback((snippet: Snippet) => {
         if (onSnippetExecute) {
@@ -246,15 +331,37 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
     useEffect(() => () => stopResizing(), [stopResizing]);
 
     const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (
+            (e.key === 'ArrowUp' || e.key === 'ArrowDown') &&
+            !isComposingRef.current &&
+            !e.shiftKey &&
+            !e.ctrlKey &&
+            !e.metaKey &&
+            !e.altKey
+        ) {
+            const textarea = e.currentTarget;
+            const selectionStart = textarea.selectionStart ?? 0;
+            const selectionEnd = textarea.selectionEnd ?? 0;
+            if (selectionStart === selectionEnd) {
+                const before = textarea.value.slice(0, selectionStart);
+                const after = textarea.value.slice(selectionStart);
+                const isAtFirstLine = !before.includes('\n');
+                const isAtLastLine = !after.includes('\n');
+                if ((e.key === 'ArrowUp' && isAtFirstLine) || (e.key === 'ArrowDown' && isAtLastLine)) {
+                    e.preventDefault();
+                    navigateHistory(e.key === 'ArrowUp' ? 'up' : 'down');
+                    return;
+                }
+            }
+        }
         if (e.key === 'Enter' && !e.shiftKey && !isComposingRef.current) {
             e.preventDefault();
-            if (e.repeat) return;
             handleSend();
         } else if (e.key === 'Escape') {
             e.preventDefault();
             onClose();
         }
-    }, [handleSend, onClose]);
+    }, [handleSend, navigateHistory, onClose]);
 
     const bg = themeColors?.background ?? '#0a0a0a';
     const fg = themeColors?.foreground ?? '#d4d4d4';
@@ -410,7 +517,13 @@ export const TerminalComposeBar: React.FC<TerminalComposeBarProps> = ({
                             }}
                             value={inputValue}
                             placeholder={`${getLabel("terminal.composeBar.placeholder", "Send command to")} ${targetLabel}...`}
-                            onInput={(e) => setComposeText(e.currentTarget.value)}
+                            onInput={(e) => {
+                                if (historyIndex !== null) {
+                                    setHistoryIndex(null);
+                                    historyDraftRef.current = '';
+                                }
+                                setComposeText(e.currentTarget.value);
+                            }}
                             onKeyDown={handleKeyDown}
                             onCompositionStart={() => { isComposingRef.current = true; }}
                             onCompositionEnd={() => { isComposingRef.current = false; }}
