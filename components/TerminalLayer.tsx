@@ -2722,8 +2722,9 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                 className={cn(
                   "absolute bg-background",
                   inActiveWorkspace && "workspace-pane",
+                  isFocusedPane && "workspace-pane-focused",
                   isVisible && "z-10",
-                  // Focus indicator is handled by CSS .workspace-pane:not(:focus-within)
+                  // Focus indicator is handled by CSS classes tied to focusedSessionId.
                 )}
                 style={style}
                 tabIndex={-1}

@@ -394,12 +394,13 @@ body {
   overflow: visible;
 }
 
-/* Dim terminal text in unfocused workspace panes (default) */
-.workspace-pane:not(:focus-within) .xterm-screen {
+/* Dim terminal text in unfocused workspace panes (default). Use explicit
+   focusedSessionId-driven class so compose/search inputs don't affect pane focus indication. */
+.workspace-pane:not(.workspace-pane-focused) .xterm-screen {
   opacity: 0.82;
 }
 /* Border-style focus indicator (opt-in via data attribute) */
-[data-workspace-focus="border"] .workspace-pane:not(:focus-within) .xterm-screen {
+[data-workspace-focus="border"] .workspace-pane:not(.workspace-pane-focused) .xterm-screen {
   opacity: 1;
 }
 [data-workspace-focus="border"] .workspace-pane::after {
@@ -411,7 +412,7 @@ body {
   transition: border-color 120ms ease;
   z-index: 40;
 }
-[data-workspace-focus="border"] .workspace-pane:focus-within::after {
+[data-workspace-focus="border"] .workspace-pane.workspace-pane-focused::after {
   border-color: hsl(var(--primary));
 }
 
