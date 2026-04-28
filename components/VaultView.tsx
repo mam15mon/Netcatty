@@ -45,7 +45,7 @@ import {
   STORAGE_KEY_VAULT_SIDEBAR_COLLAPSED,
 } from "../infrastructure/config/storageKeys";
 import { cn } from "../lib/utils";
-import { matchesHostSearchQuery } from "../lib/searchMatcher";
+import { getHostSearchMatch } from "../lib/searchMatcher";
 import { useInstantThemeSwitch } from "../lib/useInstantThemeSwitch";
 import {
   ConnectionLog,
@@ -347,9 +347,25 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
     [isSearchQuickConnect, handleConnectClick],
   );
 
-  const matchesHostSearch = useCallback((host: Host, query: string) => {
-    return matchesHostSearchQuery(query, host);
+  const getHostSearchMatchScore = useCallback((host: Host, query: string) => {
+    const match = getHostSearchMatch(query, host);
+    return match.matched ? match.score : -1;
   }, []);
+
+  const matchesHostSearch = useCallback((host: Host, query: string) => {
+    return getHostSearchMatchScore(host, query) >= 0;
+  }, [getHostSearchMatchScore]);
+
+  const sortHostsBySearchRelevance = useCallback((list: Host[], query: string) => {
+    const term = query.trim();
+    if (!term) return [...list];
+    return [...list].sort((a, b) => {
+      const scoreA = getHostSearchMatchScore(a, term);
+      const scoreB = getHostSearchMatchScore(b, term);
+      if (scoreA !== scoreB) return scoreB - scoreA;
+      return a.label.localeCompare(b.label);
+    });
+  }, [getHostSearchMatchScore]);
 
   // Check if host has multiple protocols enabled (using effective/resolved host)
   const hasMultipleProtocols = useCallback((host: Host) => {
@@ -977,6 +993,9 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
         selectedTags.some((t) => h.tags?.includes(t)),
       );
     }
+    if (search.trim()) {
+      return sortHostsBySearchRelevance(filtered, search);
+    }
     filtered = [...filtered].sort((a, b) => {
       switch (sortMode) {
         case "az":
@@ -998,7 +1017,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
       }
     });
     return filtered;
-  }, [hosts, matchesHostSearch, selectedGroupPath, showOnlyUngroupedHostsInRoot, search, selectedTags, sortMode]);
+  }, [hosts, matchesHostSearch, selectedGroupPath, showOnlyUngroupedHostsInRoot, search, selectedTags, sortHostsBySearchRelevance, sortMode]);
 
   // Pinned hosts for root-level display (not inside a subgroup)
   // Respects active search and tag filters
@@ -1013,8 +1032,11 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
         selectedTags.some((t) => h.tags?.includes(t)),
       );
     }
+    if (search.trim()) {
+      return sortHostsBySearchRelevance(filtered, search);
+    }
     return filtered.sort((a, b) => a.label.localeCompare(b.label));
-  }, [hosts, matchesHostSearch, selectedGroupPath, search, selectedTags]);
+  }, [hosts, matchesHostSearch, selectedGroupPath, search, selectedTags, sortHostsBySearchRelevance]);
 
   // Recently connected hosts for root-level display
   // Respects active search and tag filters
@@ -1029,10 +1051,13 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
         selectedTags.some((t) => h.tags?.includes(t)),
       );
     }
+    if (search.trim()) {
+      return sortHostsBySearchRelevance(filtered, search).slice(0, 6);
+    }
     return filtered
       .sort((a, b) => (b.lastConnectedAt || 0) - (a.lastConnectedAt || 0))
       .slice(0, 6);
-  }, [hosts, matchesHostSearch, selectedGroupPath, search, selectedTags]);
+  }, [hosts, matchesHostSearch, selectedGroupPath, search, selectedTags, sortHostsBySearchRelevance]);
 
   // No longer deduplicate pinned/recent hosts from the main list,
   // so hosts always appear in their groups regardless of pinned/recent status.
@@ -1056,6 +1081,9 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
         selectedTags.some((t) => h.tags?.includes(t)),
       );
     }
+    if (search.trim()) {
+      return sortHostsBySearchRelevance(filtered, search);
+    }
     filtered = [...filtered].sort((a, b) => {
       switch (sortMode) {
         case "az":
@@ -1077,7 +1105,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
       }
     });
     return filtered;
-  }, [hosts, matchesHostSearch, search, selectedTags, sortMode]);
+  }, [hosts, matchesHostSearch, search, selectedTags, sortHostsBySearchRelevance, sortMode]);
   const treeViewHostIds = useMemo(() => treeViewHosts.map((host) => host.id), [treeViewHosts]);
 
   const groupedDisplayHosts = useMemo(() => {

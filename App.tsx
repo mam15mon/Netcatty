@@ -1775,6 +1775,15 @@ function App({ settings }: { settings: SettingsState }) {
     }
   }, [hasMultipleProtocols, handleConnectToHost, resolveEffectiveHost]);
 
+  const handleMultiHostConnect = useCallback((selectedHosts: Host[]) => {
+    if (selectedHosts.length === 0) return;
+    selectedHosts.forEach((host) => {
+      handleConnectToHost(resolveEffectiveHost(host));
+    });
+    setIsQuickSwitcherOpen(false);
+    setQuickSearch('');
+  }, [handleConnectToHost, resolveEffectiveHost]);
+
   // Handle protocol selection from dialog
   const handleProtocolSelect = useCallback((protocol: HostProtocol, port: number) => {
     if (protocolSelectHost) {
@@ -2203,6 +2212,7 @@ function App({ settings }: { settings: SettingsState }) {
             showSftpTab={settings.showSftpTab}
             onQueryChange={setQuickSearch}
             onSelect={handleHostConnectWithProtocolCheck}
+            onSelectMany={handleMultiHostConnect}
             onSelectTab={(tabId) => {
               setActiveTabId(tabId);
               setIsQuickSwitcherOpen(false);

@@ -1,9 +1,11 @@
 import {
+  CheckSquare,
   Folder,
   FolderLock,
   LayoutGrid,
   Plus,
   Search,
+  Square,
   Terminal,
   TerminalSquare,
 } from "lucide-react";
@@ -30,24 +32,45 @@ const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(naviga
 const HostItem = memo(({
   host,
   reason,
+  isChecked,
   isSelected,
   onSelect,
+  onToggleSelect,
   onMouseEnter,
 }: {
   host: Host;
   reason?: string;
+  isChecked: boolean;
   isSelected: boolean;
   onSelect: (host: Host) => void;
+  onToggleSelect: () => void;
   onMouseEnter: () => void;
 }) => (
   <div
     data-selected={isSelected}
     className={`flex items-center justify-between px-4 py-2.5 cursor-pointer transition-colors ${isSelected ? "bg-primary/15" : "hover:bg-muted/50"
       }`}
-    onClick={() => onSelect(host)}
+    onClick={(event) => {
+      if (event.metaKey || event.ctrlKey) {
+        onToggleSelect();
+        return;
+      }
+      onSelect(host);
+    }}
     onMouseEnter={onMouseEnter}
   >
     <div className="flex items-center gap-3 min-w-0">
+      <button
+        type="button"
+        className="h-5 w-5 shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+        onClick={(event) => {
+          event.stopPropagation();
+          onToggleSelect();
+        }}
+        aria-label={isChecked ? "Unselect host" : "Select host"}
+      >
+        {isChecked ? <CheckSquare size={16} /> : <Square size={16} />}
+      </button>
       <DistroAvatar
         host={host}
         fallback={host.label.slice(0, 2).toUpperCase()}
@@ -78,6 +101,7 @@ interface QuickSwitcherProps {
   workspaces: Workspace[];
   onQueryChange: (value: string) => void;
   onSelect: (host: Host) => void;
+  onSelectMany?: (hosts: Host[]) => void;
   onSelectTab: (tabId: string) => void;
   onClose: () => void;
   onCreateLocalTerminal?: (shell?: { command: string; args?: string[]; name?: string; icon?: string }) => void;
@@ -95,6 +119,7 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
   workspaces,
   onQueryChange,
   onSelect,
+  onSelectMany,
   onSelectTab,
   onClose,
   onCreateLocalTerminal,
@@ -123,6 +148,7 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
   }, [keyBindings]);
   const quickSwitchKey = getHotkeyLabel('quick-switch');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedHostIds, setSelectedHostIds] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const pendingNavDeltaRef = useRef(0);
@@ -138,11 +164,17 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
     }, 50);
 
     setSelectedIndex(0);
+    setSelectedHostIds([]);
 
     return () => {
       window.clearTimeout(focusTimer);
     };
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setSelectedHostIds([]);
+  }, [query, isOpen]);
 
   // Handle clicks outside the container
   useEffect(() => {
@@ -317,6 +349,29 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
     };
   }, [selectedIndex, isOpen]);
 
+  const selectedHostSet = useMemo(() => new Set(selectedHostIds), [selectedHostIds]);
+  const selectedHosts = useMemo(() => {
+    if (selectedHostIds.length === 0) return [];
+    const byId = new Map(results.map((host) => [host.id, host]));
+    return selectedHostIds
+      .map((id) => byId.get(id))
+      .filter((host): host is Host => !!host);
+  }, [selectedHostIds, results]);
+
+  const toggleHostSelection = useCallback((hostId: string) => {
+    setSelectedHostIds((prev) => {
+      if (prev.includes(hostId)) {
+        return prev.filter((id) => id !== hostId);
+      }
+      return [...prev, hostId];
+    });
+  }, []);
+
+  const openSelectedHosts = useCallback(() => {
+    if (!onSelectMany || selectedHosts.length === 0) return;
+    onSelectMany(selectedHosts);
+  }, [onSelectMany, selectedHosts]);
+
   if (!isOpen) return null;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -326,6 +381,17 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       queueNavigation(-1);
+    } else if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      if (selectedHosts.length > 0) {
+        e.preventDefault();
+        openSelectedHosts();
+      }
+    } else if ((e.metaKey || e.ctrlKey) && e.key === " " && flatItems.length > 0) {
+      const item = flatItems[selectedIndex];
+      if (item.type === "host") {
+        e.preventDefault();
+        toggleHostSelection(item.id);
+      }
     } else if (e.key === "Enter" && flatItems.length > 0) {
       e.preventDefault();
       const item = flatItems[selectedIndex];
@@ -402,6 +468,19 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
                   {quickSwitchKey.replace(/ \+ /g, '+')}
                 </kbd>
               )}
+              {selectedHosts.length > 0 && onSelectMany && (
+                <button
+                  type="button"
+                  onClick={openSelectedHosts}
+                  className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground border border-border rounded px-1.5 py-0.5 transition-colors hover:bg-muted/50"
+                  title="Open selected hosts"
+                >
+                  <span>Open {selectedHosts.length}</span>
+                  <kbd className="text-[10px] text-muted-foreground bg-muted px-1 py-0.5 rounded">
+                    {IS_MAC ? "Cmd+Enter" : "Ctrl+Enter"}
+                  </kbd>
+                </button>
+              )}
               {onCreateWorkspace && (
                 <button
                   type="button"
@@ -431,8 +510,10 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
                     key={host.id}
                     host={host}
                     reason={hostSearchReasons?.get(host.id)}
+                    isChecked={selectedHostSet.has(host.id)}
                     isSelected={getItemIndex("host", host.id) === selectedIndex}
                     onSelect={onSelect}
+                    onToggleSelect={() => toggleHostSelection(host.id)}
                     onMouseEnter={() => setSelectedIndex(getItemIndex("host", host.id))}
                   />
                 ))}
