@@ -1132,11 +1132,11 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     const modeFactor = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1;
     const rawDelta = (e.deltaY * modeFactor) / 120;
     const direction: 1 | -1 = rawDelta >= 0 ? 1 : -1;
-    const normalized = Math.min(Math.abs(rawDelta), 3);
+    const normalized = Math.min(Math.abs(rawDelta), 4.5);
     const impulse = normalized * (terminalSettings.smoothScrollInertiaStrength || 1);
-    const minDistancePerBurst = 0.9;
+    const minDistancePerBurst = 1.6;
     const effectiveImpulse = Math.max(minDistancePerBurst, impulse);
-    const maxTotalDistance = 24;
+    const maxTotalDistance = 40;
     const now = performance.now();
 
     if (wheelInertiaRafRef.current !== null && wheelInertiaDirectionRef.current === direction) {
@@ -1151,7 +1151,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     wheelInertiaLastProgressRef.current = 0;
 
     const easingByPreset: Record<'natural' | 'responsive' | 'gentle', (t: number) => number> = {
-      natural: (t) => 1 - Math.pow(1 - t, 3),
+      natural: (t) => 1 - Math.pow(1 - t, 2.4),
       responsive: (t) => 1 - Math.pow(1 - t, 2),
       gentle: (t) => t * (2 - t),
     };
