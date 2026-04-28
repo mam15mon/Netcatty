@@ -689,6 +689,7 @@ const zhCN: Messages = {
   'hostDetails.distro.option.cisco': '思科',
   'hostDetails.distro.option.juniper': '瞻博网络',
   'hostDetails.distro.option.huawei': '华为',
+  'hostDetails.distro.option.h3c': 'H3C',
   'hostDetails.distro.option.hpe': '慧与 / H3C',
   'hostDetails.distro.option.mikrotik': 'MikroTik',
   'hostDetails.distro.option.fortinet': '飞塔',

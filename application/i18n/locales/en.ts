@@ -1069,6 +1069,7 @@ const en: Messages = {
   'hostDetails.distro.option.cisco': 'Cisco',
   'hostDetails.distro.option.juniper': 'Juniper Networks',
   'hostDetails.distro.option.huawei': 'Huawei',
+  'hostDetails.distro.option.h3c': 'H3C',
   'hostDetails.distro.option.hpe': 'HPE / H3C',
   'hostDetails.distro.option.mikrotik': 'MikroTik',
   'hostDetails.distro.option.fortinet': 'Fortinet',

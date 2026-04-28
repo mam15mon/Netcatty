@@ -28,6 +28,7 @@ export const NETWORK_DEVICE_OPTIONS = [
   'cisco',
   'juniper',
   'huawei',
+  'h3c',
   'hpe',
   'mikrotik',
   'fortinet',
@@ -99,9 +100,10 @@ export const detectVendorFromSshVersion = (softwareVersion?: string): '' | Netwo
   if (/^HUAWEI[-_]/i.test(s)) return 'huawei';
   if (/^VRP-/i.test(s)) return 'huawei';
 
-  // HPE / H3C — Comware switches, Integrated Lights-Out (iLO), legacy 3Com
-  if (/^Comware-/i.test(s)) return 'hpe';
-  if (/^3Com\s*OS/i.test(s)) return 'hpe';
+  // H3C — Comware switches and legacy 3Com OS banners
+  if (/^Comware-/i.test(s)) return 'h3c';
+  if (/^3Com\s*OS/i.test(s)) return 'h3c';
+  // HPE-specific SSH identifiers (e.g. iLO)
   if (/^mpSSH_/i.test(s)) return 'hpe';
 
   // MikroTik RouterOS
