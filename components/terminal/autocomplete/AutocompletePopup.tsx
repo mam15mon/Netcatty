@@ -91,6 +91,10 @@ const DirExpandIndicator: React.FC<{ visible: boolean; color: string }> = ({ vis
   <span style={{ fontSize: "10px", color, opacity: visible ? 0.6 : 0, flexShrink: 0, marginLeft: "2px" }}>›</span>
 );
 
+function buildSuggestionSignature(suggestion: CompletionSuggestion): string {
+  return `${suggestion.source}\u0000${suggestion.text}\u0000${suggestion.displayText}\u0000${suggestion.description ?? ""}`;
+}
+
 const AutocompletePopup: React.FC<AutocompletePopupProps> = ({
   suggestions,
   selectedIndex,
@@ -112,6 +116,7 @@ const AutocompletePopup: React.FC<AutocompletePopupProps> = ({
   const wrapperRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const selectedRef = useRef<HTMLDivElement>(null);
+  const hoveredSignatureRef = useRef<string | null>(null);
   const [hoveredIndex, setHoveredIndex] = useState(-1);
 
   useEffect(() => {
@@ -123,9 +128,22 @@ const AutocompletePopup: React.FC<AutocompletePopupProps> = ({
     }
   }, [selectedIndex]);
 
-  // Reset hover when suggestions change
+  // Preserve hover target across async suggestion refreshes to avoid flicker.
   useEffect(() => {
-    setHoveredIndex(-1);
+    const signature = hoveredSignatureRef.current;
+    if (!signature) {
+      setHoveredIndex(-1);
+      return;
+    }
+    const nextIndex = suggestions.findIndex(
+      (suggestion) => buildSuggestionSignature(suggestion) === signature,
+    );
+    if (nextIndex < 0) {
+      hoveredSignatureRef.current = null;
+      setHoveredIndex(-1);
+      return;
+    }
+    setHoveredIndex((prev) => (prev === nextIndex ? prev : nextIndex));
   }, [suggestions]);
 
   useEffect(() => {
@@ -248,6 +266,10 @@ const AutocompletePopup: React.FC<AutocompletePopupProps> = ({
         e.preventDefault();
         e.stopPropagation();
       }}
+      onMouseLeave={() => {
+        hoveredSignatureRef.current = null;
+        setHoveredIndex(-1);
+      }}
     >
       {/* Main suggestion list */}
       <div
@@ -282,8 +304,10 @@ const AutocompletePopup: React.FC<AutocompletePopupProps> = ({
                 gap: "8px",
                 lineHeight: "1.4",
               }}
-              onMouseEnter={() => setHoveredIndex(index)}
-              onMouseLeave={() => setHoveredIndex(-1)}
+              onMouseEnter={() => {
+                hoveredSignatureRef.current = buildSuggestionSignature(suggestion);
+                setHoveredIndex((prev) => (prev === index ? prev : index));
+              }}
               onMouseDown={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
