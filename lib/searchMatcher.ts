@@ -1,8 +1,9 @@
 import { pinyin } from "pinyin-pro";
 
-const SEARCH_SPLIT_REGEX = /[\s\-_/\\|.,，。;；:：!！?？()（）[\]{}<>《》、"'`~·]+/u;
-const SEARCH_REMOVE_REGEX = /[\s\-_/\\|.,，。;；:：!！?？()（）[\]{}<>《》、"'`~·]+/gu;
+const SEARCH_SPLIT_REGEX = /[\s\p{Pd}_/\\|.,，。;；:：!！?？()（）[\]{}<>《》、"'`~·]+/u;
+const SEARCH_REMOVE_REGEX = /[\s\p{Pd}_/\\|.,，。;；:：!！?？()（）[\]{}<>《》、"'`~·]+/gu;
 const PINYIN_CACHE = new Map<string, { full: string; initials: string }>();
+const IPV4_LIKE_REGEX = /^\d{1,3}(?:\.\d{1,3})+$/;
 
 function normalizeText(input: string): string {
   return input.normalize("NFKC").toLowerCase().trim();
@@ -51,12 +52,33 @@ export function matchesSearchQuery(
   query: string,
   ...fields: Array<string | null | undefined>
 ): boolean {
-  const tokens = tokenizeSearchQuery(query);
-  if (tokens.length === 0) return true;
+  const normalizedQuery = normalizeText(query);
+  if (!normalizedQuery) return true;
 
-  const sourceText = fields.filter(Boolean).join(" ");
-  const haystack = normalizeText(sourceText);
-  if (!haystack) return false;
+  const normalizedFields = fields
+    .filter((field): field is string => typeof field === "string" && field.trim().length > 0)
+    .map((field) => normalizeText(field));
+  if (normalizedFields.length === 0) return false;
+
+  // For dotted numeric input (IPv4-like), require contiguous literal match.
+  if (IPV4_LIKE_REGEX.test(normalizedQuery)) {
+    return normalizedFields.some((field) => field.includes(normalizedQuery));
+  }
+
+  const sourceText = normalizedFields.join(" ");
+  const haystack = sourceText;
+  if (haystack.includes(normalizedQuery)) {
+    return true;
+  }
+
+  const haystackCompact = compactText(sourceText);
+  const compactQuery = compactText(normalizedQuery);
+  if (compactQuery && haystackCompact.includes(compactQuery)) {
+    return true;
+  }
+
+  const tokens = tokenizeSearchQuery(normalizedQuery);
+  if (tokens.length === 0) return true;
 
   if (tokens.every((token) => haystack.includes(token))) {
     return true;
