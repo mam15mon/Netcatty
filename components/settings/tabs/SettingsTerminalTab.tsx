@@ -940,21 +940,33 @@ export default function SettingsTerminalTab(props: {
                     </span>
                   </div>
                 </SettingRow>
-                <SettingRow label={t("settings.terminal.behavior.smoothScrolling.inertiaFriction")}>
+                <SettingRow label={t("settings.terminal.behavior.smoothScrolling.inertiaDuration")}>
                   <div className="flex items-center gap-2">
                     <input
                       type="range"
-                      min={0.8}
-                      max={0.98}
-                      step={0.01}
-                      value={terminalSettings.smoothScrollInertiaFriction}
-                      onChange={(e) => updateTerminalSetting("smoothScrollInertiaFriction", parseFloat(e.target.value))}
+                      min={120}
+                      max={800}
+                      step={10}
+                      value={terminalSettings.smoothScrollInertiaDurationMs}
+                      onChange={(e) => updateTerminalSetting("smoothScrollInertiaDurationMs", parseInt(e.target.value))}
                       className="w-24 accent-primary"
                     />
-                    <span className="text-sm text-muted-foreground w-10 text-center">
-                      {terminalSettings.smoothScrollInertiaFriction.toFixed(2)}
+                    <span className="text-sm text-muted-foreground w-14 text-center">
+                      {terminalSettings.smoothScrollInertiaDurationMs}ms
                     </span>
                   </div>
+                </SettingRow>
+                <SettingRow label={t("settings.terminal.behavior.smoothScrolling.inertiaCurve")}>
+                  <Select
+                    value={terminalSettings.smoothScrollInertiaCurve}
+                    options={[
+                      { value: "natural", label: t("settings.terminal.behavior.smoothScrolling.inertiaCurve.natural") },
+                      { value: "responsive", label: t("settings.terminal.behavior.smoothScrolling.inertiaCurve.responsive") },
+                      { value: "gentle", label: t("settings.terminal.behavior.smoothScrolling.inertiaCurve.gentle") },
+                    ]}
+                    onChange={(v) => updateTerminalSetting("smoothScrollInertiaCurve", v as "natural" | "responsive" | "gentle")}
+                    className="w-36"
+                  />
                 </SettingRow>
               </>
             )}

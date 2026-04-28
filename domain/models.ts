@@ -478,7 +478,8 @@ export interface TerminalSettings {
   smoothScrolling: boolean; // Animate viewport scrolling instead of jumping instantly
   smoothScrollInertia: boolean; // Add momentum-style inertial wheel scrolling
   smoothScrollInertiaStrength: number; // Wheel impulse multiplier for inertial scrolling
-  smoothScrollInertiaFriction: number; // Per-frame velocity retention (0-1), lower = faster stop
+  smoothScrollInertiaDurationMs: number; // Duration of inertia animation per wheel burst
+  smoothScrollInertiaCurve: 'natural' | 'responsive' | 'gentle'; // Easing preset for inertia
 
   // Mouse
   rightClickBehavior: RightClickBehavior;
@@ -837,7 +838,8 @@ const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   smoothScrolling: false,
   smoothScrollInertia: false,
   smoothScrollInertiaStrength: 0.7,
-  smoothScrollInertiaFriction: 0.88,
+  smoothScrollInertiaDurationMs: 360,
+  smoothScrollInertiaCurve: 'natural',
   rightClickBehavior: 'context-menu',
   copyOnSelect: false,
   middleClickPaste: true,

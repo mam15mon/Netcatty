@@ -1052,9 +1052,13 @@ const TerminalComponent: React.FC<TerminalProps> = ({
   const wheelZoomFitRafRef = useRef<number | null>(null);
   const wheelZoomSizeRef = useRef(effectiveFontSize);
   const effectiveFontSizeRef = useRef(effectiveFontSize);
-  const wheelInertiaVelocityRef = useRef(0);
   const wheelInertiaRafRef = useRef<number | null>(null);
   const wheelInertiaCarryRef = useRef(0);
+  const wheelInertiaTotalRef = useRef(0);
+  const wheelInertiaAppliedRef = useRef(0);
+  const wheelInertiaDirectionRef = useRef<1 | -1>(1);
+  const wheelInertiaStartMsRef = useRef(0);
+  const wheelInertiaLastProgressRef = useRef(0);
 
   useEffect(() => {
     wheelZoomSizeRef.current = effectiveFontSize;
@@ -1127,24 +1131,45 @@ const TerminalComponent: React.FC<TerminalProps> = ({
 
     const modeFactor = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1;
     const rawDelta = (e.deltaY * modeFactor) / 120;
-    const direction = rawDelta >= 0 ? 1 : -1;
+    const direction: 1 | -1 = rawDelta >= 0 ? 1 : -1;
     const normalized = Math.min(Math.abs(rawDelta), 3);
-    const impulse = direction * normalized * (terminalSettings.smoothScrollInertiaStrength || 1);
-    const maxVelocity = 8;
-    wheelInertiaVelocityRef.current = Math.max(
-      -maxVelocity,
-      Math.min(maxVelocity, wheelInertiaVelocityRef.current + impulse),
-    );
+    const impulse = normalized * (terminalSettings.smoothScrollInertiaStrength || 1);
+    const maxTotalDistance = 24;
+    const now = performance.now();
+
+    if (wheelInertiaRafRef.current !== null && wheelInertiaDirectionRef.current === direction) {
+      const remaining = Math.max(0, wheelInertiaTotalRef.current - wheelInertiaAppliedRef.current);
+      wheelInertiaTotalRef.current = Math.min(maxTotalDistance, remaining + impulse);
+    } else {
+      wheelInertiaDirectionRef.current = direction;
+      wheelInertiaTotalRef.current = Math.min(maxTotalDistance, impulse);
+    }
+    wheelInertiaAppliedRef.current = 0;
+    wheelInertiaStartMsRef.current = now;
+    wheelInertiaLastProgressRef.current = 0;
+
+    const easingByPreset: Record<'natural' | 'responsive' | 'gentle', (t: number) => number> = {
+      natural: (t) => 1 - Math.pow(1 - t, 3),
+      responsive: (t) => 1 - Math.pow(1 - t, 2),
+      gentle: (t) => t * (2 - t),
+    };
 
     const runInertia = () => {
       wheelInertiaRafRef.current = null;
       const activeTerm = termRef.current;
       if (!activeTerm) return;
+      const nowMs = performance.now();
+      const durationMs = Math.max(80, terminalSettingsRef.current?.smoothScrollInertiaDurationMs ?? 360);
+      const preset = terminalSettingsRef.current?.smoothScrollInertiaCurve ?? 'natural';
+      const easing = easingByPreset[preset];
+      const progress = Math.min(1, (nowMs - wheelInertiaStartMsRef.current) / durationMs);
+      const easedNow = easing(progress);
+      const easedPrev = easing(wheelInertiaLastProgressRef.current);
+      const delta = Math.max(0, (easedNow - easedPrev) * wheelInertiaTotalRef.current);
+      wheelInertiaAppliedRef.current += delta;
+      wheelInertiaLastProgressRef.current = progress;
 
-      const friction = terminalSettingsRef.current?.smoothScrollInertiaFriction ?? 0.88;
-      const clampedFriction = Math.min(0.995, Math.max(0.7, friction));
-
-      wheelInertiaCarryRef.current += wheelInertiaVelocityRef.current;
+      wheelInertiaCarryRef.current += delta * wheelInertiaDirectionRef.current;
       const wholeLines =
         wheelInertiaCarryRef.current > 0
           ? Math.floor(wheelInertiaCarryRef.current)
@@ -1153,15 +1178,11 @@ const TerminalComponent: React.FC<TerminalProps> = ({
         activeTerm.scrollLines(wholeLines);
         wheelInertiaCarryRef.current -= wholeLines;
       }
-
-      wheelInertiaVelocityRef.current *= clampedFriction;
-      if (Math.abs(wheelInertiaVelocityRef.current) < 0.02) {
-        wheelInertiaVelocityRef.current = 0;
-        wheelInertiaCarryRef.current = 0;
+      if (progress < 1 && wheelInertiaAppliedRef.current < wheelInertiaTotalRef.current) {
+        wheelInertiaRafRef.current = window.requestAnimationFrame(runInertia);
         return;
       }
-
-      wheelInertiaRafRef.current = window.requestAnimationFrame(runInertia);
+      wheelInertiaCarryRef.current = 0;
     };
 
     if (wheelInertiaRafRef.current === null) {
@@ -1189,8 +1210,10 @@ const TerminalComponent: React.FC<TerminalProps> = ({
         window.cancelAnimationFrame(wheelInertiaRafRef.current);
         wheelInertiaRafRef.current = null;
       }
-      wheelInertiaVelocityRef.current = 0;
       wheelInertiaCarryRef.current = 0;
+      wheelInertiaTotalRef.current = 0;
+      wheelInertiaAppliedRef.current = 0;
+      wheelInertiaLastProgressRef.current = 0;
       flushTerminalWheelZoom();
     };
   }, [flushTerminalWheelZoom, handleTerminalWheel]);
