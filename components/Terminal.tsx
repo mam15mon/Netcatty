@@ -1131,9 +1131,9 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     const modeFactor = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1;
     const rawDelta = (e.deltaY * modeFactor) / 120;
     const direction: 1 | -1 = rawDelta >= 0 ? 1 : -1;
-    const normalized = Math.min(Math.abs(rawDelta), 4.5);
-    const impulse = normalized * (terminalSettings.smoothScrollInertiaStrength || 1);
-    const minDistancePerBurst = 1.2;
+    const normalized = Math.min(Math.abs(rawDelta), 6);
+    const impulse = Math.pow(normalized, 1.12) * (terminalSettings.smoothScrollInertiaStrength || 1);
+    const minDistancePerBurst = 1.6;
     const effectiveImpulse = Math.max(minDistancePerBurst, impulse);
     const maxVelocity = 28;
     const now = performance.now();
@@ -1146,7 +1146,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       wheelInertiaBurstCountRef.current = 0;
     }
     wheelInertiaLastInputMsRef.current = now;
-    const burstMultiplier = 1 + wheelInertiaBurstCountRef.current * 0.28;
+    const burstMultiplier = 1 + wheelInertiaBurstCountRef.current * 0.36;
     const burstImpulse = effectiveImpulse * burstMultiplier;
     const immediateRatio = 0.35;
     const immediateLinesFloat = burstImpulse * immediateRatio * direction;
