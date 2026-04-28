@@ -29,11 +29,13 @@ const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(naviga
 // Memoized host item component to prevent unnecessary re-renders
 const HostItem = memo(({
   host,
+  reason,
   isSelected,
   onSelect,
   onMouseEnter,
 }: {
   host: Host;
+  reason?: string;
   isSelected: boolean;
   onSelect: (host: Host) => void;
   onMouseEnter: () => void;
@@ -51,7 +53,14 @@ const HostItem = memo(({
         fallback={host.label.slice(0, 2).toUpperCase()}
         size="sm"
       />
-      <span className="text-sm font-medium truncate">{host.label}</span>
+      <div className="min-w-0">
+        <div className="text-sm font-medium truncate">{host.label}</div>
+        {reason && (
+          <div className="text-[10px] text-muted-foreground truncate">
+            {reason}
+          </div>
+        )}
+      </div>
     </div>
     <div className="text-[11px] text-muted-foreground">
       {host.group ? `Personal / ${host.group}` : "Personal"}
@@ -64,6 +73,7 @@ interface QuickSwitcherProps {
   isOpen: boolean;
   query: string;
   results: Host[];
+  hostSearchReasons?: Map<string, string>;
   sessions: TerminalSession[];
   workspaces: Workspace[];
   onQueryChange: (value: string) => void;
@@ -80,6 +90,7 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
   isOpen,
   query,
   results,
+  hostSearchReasons,
   sessions,
   workspaces,
   onQueryChange,
@@ -419,6 +430,7 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
                   <HostItem
                     key={host.id}
                     host={host}
+                    reason={hostSearchReasons?.get(host.id)}
                     isSelected={getItemIndex("host", host.id) === selectedIndex}
                     onSelect={onSelect}
                     onMouseEnter={() => setSelectedIndex(getItemIndex("host", host.id))}

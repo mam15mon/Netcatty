@@ -48,7 +48,7 @@ import { AddToWorkspaceDialog } from './components/workspace/AddToWorkspaceDialo
 import { KeyboardInteractiveModal, KeyboardInteractiveRequest } from './components/KeyboardInteractiveModal';
 import { PassphraseModal, PassphraseRequest } from './components/PassphraseModal';
 import { cn } from './lib/utils';
-import { matchesHostSearchQuery } from './lib/searchMatcher';
+import { getHostSearchMatch, getHostSearchReason } from './lib/searchMatcher';
 import { classifyLocalShellType } from './lib/localShell';
 import { useDiscoveredShells, resolveShellSetting } from './lib/useDiscoveredShells';
 import { ConnectionLog, Host, HostProtocol, KnownHost, SerialConfig, Snippet, TerminalSession, TerminalTheme } from './types';
@@ -1542,15 +1542,38 @@ function App({ settings }: { settings: SettingsState }) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  const quickResults = useMemo(() => {
-    if (!isQuickSwitcherOpen) return [];
+  const quickHostSearch = useMemo(() => {
+    if (!isQuickSwitcherOpen) {
+      return { results: [], reasonsById: new Map<string, string>() };
+    }
+
     const term = quickSearch.trim();
-    const filtered = term
-      ? hosts.filter(h =>
-        matchesHostSearchQuery(term, h)
-      )
-      : hosts;
-    return filtered;
+    if (!term) {
+      return { results: hosts, reasonsById: new Map<string, string>() };
+    }
+
+    const ranked = hosts
+      .map((host) => ({ host, match: getHostSearchMatch(term, host) }))
+      .filter((entry) => entry.match.matched)
+      .sort((left, right) => {
+        if (left.match.score !== right.match.score) {
+          return right.match.score - left.match.score;
+        }
+        return left.host.label.localeCompare(right.host.label);
+      });
+
+    const reasonsById = new Map<string, string>();
+    for (const entry of ranked) {
+      const reason = getHostSearchReason(entry.match);
+      if (reason) {
+        reasonsById.set(entry.host.id, reason);
+      }
+    }
+
+    return {
+      results: ranked.map((entry) => entry.host),
+      reasonsById,
+    };
   }, [quickSearch, hosts, isQuickSwitcherOpen]);
 
   const handleDeleteHost = useCallback((hostId: string) => {
@@ -2173,7 +2196,8 @@ function App({ settings }: { settings: SettingsState }) {
           <LazyQuickSwitcher
             isOpen={isQuickSwitcherOpen}
             query={quickSearch}
-            results={quickResults}
+            results={quickHostSearch.results}
+            hostSearchReasons={quickHostSearch.reasonsById}
             sessions={sessions}
             workspaces={workspaces}
             showSftpTab={settings.showSftpTab}

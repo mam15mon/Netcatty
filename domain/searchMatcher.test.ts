@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { matchesHostSearchQuery, matchesSearchQuery } from "../lib/searchMatcher.ts";
+import {
+  getHostSearchMatch,
+  matchesHostSearchQuery,
+  matchesSearchQuery,
+} from "../lib/searchMatcher.ts";
 
 test("matches mixed Chinese and dash-separated numeric suffix with spaced query", () => {
   assert.equal(
@@ -57,4 +61,63 @@ test("host search still supports direct IP matching", () => {
     }),
     true,
   );
+});
+
+test("host search keeps trailing dash semantic and avoids loose numeric fallback", () => {
+  assert.equal(
+    matchesHostSearchQuery("山东 6-", {
+      label: "山东-IPMI交换机6",
+      hostname: "10.6.1.88",
+      group: "铁塔/山东",
+      tags: [],
+    }),
+    false,
+  );
+  assert.equal(
+    matchesHostSearchQuery("山东 6-", {
+      label: "山东-管理交换机6-1",
+      hostname: "10.6.1.81",
+      group: "铁塔/山东",
+      tags: [],
+    }),
+    true,
+  );
+});
+
+test("host search scoring prefers strict punctuation match over loose compact match", () => {
+  const strict = getHostSearchMatch("山东 6-", {
+    label: "山东-管理交换机6-1",
+    hostname: "10.6.1.81",
+    group: "铁塔/山东",
+    tags: [],
+  });
+  const loose = getHostSearchMatch("山东 61", {
+    label: "山东-管理交换机6-1",
+    hostname: "10.6.1.81",
+    group: "铁塔/山东",
+    tags: [],
+  });
+  assert.equal(strict.matched, true);
+  assert.equal(loose.matched, true);
+  assert.equal(strict.phase, "strict");
+  assert.equal(loose.phase, "loose");
+  assert.equal(strict.score > loose.score, true);
+});
+
+test("host search scoring favors label over group when both match", () => {
+  const labelHit = getHostSearchMatch("山东 6-1", {
+    label: "山东-业务交换机6-1",
+    hostname: "10.8.2.10",
+    group: "网络设备/核心",
+    tags: [],
+  });
+  const groupHit = getHostSearchMatch("山东 6-1", {
+    label: "核心交换机",
+    hostname: "10.8.2.11",
+    group: "山东/业务交换机6-1",
+    tags: [],
+  });
+  assert.equal(labelHit.matched, true);
+  assert.equal(groupHit.matched, true);
+  assert.equal(labelHit.score > groupHit.score, true);
 });
