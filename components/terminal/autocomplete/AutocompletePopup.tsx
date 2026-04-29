@@ -5,7 +5,7 @@
  * Colors are derived from the active terminal theme for visual consistency.
  */
 
-import React, { useEffect, useRef, useState, memo } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState, memo, useMemo } from "react";
 import { Folder, File, Link } from "lucide-react";
 import type { CompletionSuggestion, SuggestionSource } from "./completionEngine";
 
@@ -118,6 +118,7 @@ const AutocompletePopup: React.FC<AutocompletePopupProps> = ({
   const selectedRef = useRef<HTMLDivElement>(null);
   const hoveredSignatureRef = useRef<string | null>(null);
   const [hoveredIndex, setHoveredIndex] = useState(-1);
+  const [measuredListHeight, setMeasuredListHeight] = useState(0);
 
   useEffect(() => {
     if (selectedRef.current && listRef.current) {
@@ -127,6 +128,14 @@ const AutocompletePopup: React.FC<AutocompletePopupProps> = ({
       });
     }
   }, [selectedIndex]);
+
+  // Measure the actual rendered list height so the detail panel can cap to it.
+  // Runs after paint when suggestions change or the list re-renders with new maxHeight.
+  useLayoutEffect(() => {
+    if (listRef.current) {
+      setMeasuredListHeight(listRef.current.getBoundingClientRect().height);
+    }
+  });
 
   // Preserve hover target across async suggestion refreshes to avoid flicker.
   useEffect(() => {
@@ -182,6 +191,14 @@ const AutocompletePopup: React.FC<AutocompletePopupProps> = ({
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [visible, onDismiss]);
 
+  // Check if ANY suggestion in the current set has a non-path description.
+  // This is stable across hover changes — it only changes when the suggestion list changes,
+  // which prevents jitter from hover-dependent height estimation.
+  const anyHasDetail = useMemo(
+    () => suggestions.some((s) => s.source !== "path" && s.description && s.description.length > 0),
+    [suggestions],
+  );
+
   if (!visible || suggestions.length === 0) return null;
 
   const bg = themeColors?.background ?? "#1e1e2e";
@@ -209,14 +226,17 @@ const AutocompletePopup: React.FC<AutocompletePopupProps> = ({
   const anchorGap = 8;
   const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 800;
   const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 1200;
+
+  // Height estimation for deciding render direction.
+  // IMPORTANT: Use `anyHasDetail` (stable across hovers) instead of `showDetail` (per-hover)
+  // to prevent the up/down decision from flip-flopping when hovering between items.
   const estimatedPopupHeight = Math.min(maxHeight, suggestions.length * 28 + 8);
-  const estimatedDetailHeight = showDetail && detailItem && detailItem.source !== "path" ? 96 : 0;
-  const desiredContentHeight = Math.min(
-    maxHeight,
-    Math.max(estimatedPopupHeight, estimatedDetailHeight),
-  );
+  const estimatedDetailHeight = anyHasDetail ? 280 : 0;
+  const desiredContentHeight = Math.max(estimatedPopupHeight, estimatedDetailHeight);
+
   const spaceAbove = Math.max(0, fixedLineTop - viewportPadding - anchorGap);
   const spaceBelow = Math.max(0, viewportHeight - fixedLineBottom - viewportPadding - anchorGap);
+
   const canFullyRenderAbove = spaceAbove >= desiredContentHeight;
   const canFullyRenderBelow = spaceBelow >= desiredContentHeight;
   const renderUpward = canFullyRenderBelow
@@ -226,16 +246,41 @@ const AutocompletePopup: React.FC<AutocompletePopupProps> = ({
       : expandUpward
         ? spaceAbove >= Math.min(spaceBelow, 80)
         : spaceAbove > spaceBelow;
+
   const availableVerticalSpace = renderUpward ? spaceAbove : spaceBelow;
   const effectiveMaxHeight = Math.max(0, Math.min(maxHeight, availableVerticalSpace));
-  const contentHeightForPlacement = Math.min(
-    effectiveMaxHeight,
-    desiredContentHeight,
-  );
-  const anchoredTop = renderUpward
-    ? Math.max(viewportPadding, fixedLineTop - anchorGap - contentHeightForPlacement)
-    : Math.min(fixedLineBottom + anchorGap, viewportHeight - viewportPadding - contentHeightForPlacement);
-  const clampedLeft = Math.max(viewportPadding, Math.min(fixedLeft, viewportWidth - viewportPadding - 400));
+
+  // Horizontal placement: decide if detail panel goes left or right of the list.
+  // Use a stable decision based on cursor X position, not hover state.
+  const showDetailOnLeft = anyHasDetail && fixedLeft > (viewportWidth / 2 + 100);
+
+  // Clamp horizontal position to prevent overflow on either side.
+  const clampedLeft = showDetailOnLeft
+    // When detail is on the left, just ensure the list itself fits on the right side
+    ? Math.max(viewportPadding + 284, Math.min(fixedLeft, viewportWidth - viewportPadding - 220))
+    // When detail is on the right, ensure both list + detail fit
+    : Math.max(viewportPadding, Math.min(fixedLeft, viewportWidth - viewportPadding - (anyHasDetail ? 500 : 220)));
+
+  // Build wrapper styles
+  const popupStyles: React.CSSProperties = {
+    position: "fixed",
+    left: `${clampedLeft}px`,
+    zIndex: 10000,
+    display: "flex",
+    alignItems: renderUpward ? "flex-end" : "flex-start",
+    gap: "4px",
+    pointerEvents: "auto",
+  };
+
+  // Anchor to cursor-side edge to prevent jitter when detail panel height changes.
+  // When rendering downward: anchor top edge to cursor bottom.
+  // When rendering upward: anchor bottom edge to cursor top.
+  if (renderUpward) {
+    popupStyles.bottom = `${viewportHeight - (fixedLineTop - anchorGap)}px`;
+  } else {
+    popupStyles.top = `${fixedLineBottom + anchorGap}px`;
+  }
+
 
   const sharedBoxStyle = {
     backgroundColor: popupBg,
@@ -249,19 +294,40 @@ const AutocompletePopup: React.FC<AutocompletePopupProps> = ({
     color: textColor,
   };
 
+  // Build children in the correct visual order
+  const detailPanel = showDetail && detailItem && detailItem.source !== "path" ? (
+    <div
+      style={{
+        ...sharedBoxStyle,
+        padding: "10px 12px",
+        maxWidth: "280px",
+        minWidth: "160px",
+        maxHeight: measuredListHeight > 0 ? `${measuredListHeight}px` : `${effectiveMaxHeight}px`,
+        overflowY: "auto" as const,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+        <span style={{ fontWeight: 600, fontSize: "13px" }}>{detailItem.displayText}</span>
+        <span style={{
+          fontSize: "10px",
+          color: SOURCE_LABELS[detailItem.source].fallbackColor,
+          padding: "1px 5px",
+          borderRadius: "3px",
+          backgroundColor: `${SOURCE_LABELS[detailItem.source].fallbackColor}15`,
+        }}>
+          {SOURCE_LABELS[detailItem.source].fullLabel}
+        </span>
+      </div>
+      <div style={{ fontSize: "12px", color: dimTextColor, lineHeight: "1.5", wordBreak: "break-word" }}>
+        {detailItem.description}
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div
       ref={wrapperRef}
-      style={{
-        position: "fixed",
-        left: `${clampedLeft}px`,
-        top: `${anchoredTop}px`,
-        zIndex: 10000,
-        display: "flex",
-        alignItems: renderUpward ? "flex-end" : "flex-start",
-        gap: "4px",
-        pointerEvents: "auto", // Re-enable on popup itself (parent is pointer-events-none)
-      }}
+      style={popupStyles}
       onMouseDown={(e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -271,6 +337,9 @@ const AutocompletePopup: React.FC<AutocompletePopupProps> = ({
         setHoveredIndex(-1);
       }}
     >
+      {/* Detail panel on the LEFT when showDetailOnLeft is true */}
+      {showDetailOnLeft && detailPanel}
+
       {/* Main suggestion list */}
       <div
         ref={listRef}
@@ -445,36 +514,8 @@ const AutocompletePopup: React.FC<AutocompletePopupProps> = ({
         </div>
       ))}
 
-      {/* Detail tooltip panel — shows full description for non-path items */}
-      {showDetail && detailItem && detailItem.source !== "path" && (
-        <div
-          style={{
-            ...sharedBoxStyle,
-            padding: "10px 12px",
-            maxWidth: "280px",
-            minWidth: "160px",
-            maxHeight: `${effectiveMaxHeight}px`,
-            overflowY: "auto",
-            alignSelf: renderUpward ? "flex-end" : "flex-start",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
-            <span style={{ fontWeight: 600, fontSize: "13px" }}>{detailItem.displayText}</span>
-            <span style={{
-              fontSize: "10px",
-              color: SOURCE_LABELS[detailItem.source].fallbackColor,
-              padding: "1px 5px",
-              borderRadius: "3px",
-              backgroundColor: `${SOURCE_LABELS[detailItem.source].fallbackColor}15`,
-            }}>
-              {SOURCE_LABELS[detailItem.source].fullLabel}
-            </span>
-          </div>
-          <div style={{ fontSize: "12px", color: dimTextColor, lineHeight: "1.5", wordBreak: "break-word" }}>
-            {detailItem.description}
-          </div>
-        </div>
-      )}
+      {/* Detail panel on the RIGHT (default) */}
+      {!showDetailOnLeft && detailPanel}
     </div>
   );
 };

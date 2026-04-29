@@ -129,8 +129,7 @@ const DistroAvatarInner: React.FC<DistroAvatarProps> = ({
           alt={distro || host.os}
           className={cn(
             "object-contain",
-            distro === "h3c" ? "" : "invert brightness-0",
-            iconSize,
+            distro === "h3c" ? "w-[80%]" : cn("invert brightness-0", iconSize),
           )}
           onError={() => setErrored(true)}
         />

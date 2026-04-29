@@ -1372,7 +1372,10 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
                                 <img
                                   src={selectedOption.icon}
                                   alt={selectedOption.label}
-                                  className="h-3 w-3 object-contain invert brightness-0"
+                                  className={cn(
+                                    "object-contain",
+                                    selectedOption.value === "h3c" ? "w-[80%]" : "h-3 w-3 invert brightness-0",
+                                  )}
                                 />
                               ) : (
                                 <div className="h-2 w-2 rounded-full bg-white/70" />
@@ -1399,7 +1402,10 @@ const HostDetailsPanel: React.FC<HostDetailsPanelProps> = ({
                                 <img
                                   src={option.icon}
                                   alt={option.label}
-                                  className="h-3 w-3 object-contain invert brightness-0"
+                                  className={cn(
+                                    "object-contain",
+                                    option.value === "h3c" ? "w-[80%]" : "h-3 w-3 invert brightness-0",
+                                  )}
                                 />
                               ) : (
                                 <div className="h-2 w-2 rounded-full bg-white/70" />

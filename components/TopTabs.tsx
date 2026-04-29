@@ -117,9 +117,8 @@ const SessionTabIcon: React.FC<{ host: Host | undefined; isActive: boolean; prot
             src={logo}
             alt={distro || host.os}
             className={cn(
-              iconSize,
               "object-contain",
-              distro === "h3c" ? "" : "invert brightness-0",
+              distro === "h3c" ? "w-[80%]" : cn("invert brightness-0", iconSize),
             )}
           />
         </div>

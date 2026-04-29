@@ -1777,11 +1777,23 @@ function App({ settings }: { settings: SettingsState }) {
 
   const handleMultiHostConnect = useCallback((selectedHosts: Host[]) => {
     if (selectedHosts.length === 0) return;
-    selectedHosts.forEach((host) => {
-      handleConnectToHost(resolveEffectiveHost(host));
-    });
     setIsQuickSwitcherOpen(false);
     setQuickSearch('');
+
+    // Stagger connections so the renderer has time to mount and initialise
+    // each Terminal/xterm instance before adding the next one.  Without
+    // this, all N terminals are created in a single frame, causing a
+    // multi-hundred-ms main-thread block.
+    const STAGGER_MS = 120;
+    selectedHosts.forEach((host, i) => {
+      if (i === 0) {
+        handleConnectToHost(resolveEffectiveHost(host));
+      } else {
+        setTimeout(() => {
+          handleConnectToHost(resolveEffectiveHost(host));
+        }, i * STAGGER_MS);
+      }
+    });
   }, [handleConnectToHost, resolveEffectiveHost]);
 
   // Handle protocol selection from dialog
